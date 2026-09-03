@@ -27,8 +27,8 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
 }) => {
   const isRtl = lang === 'ar';
 
-  // Dynamic host origin (works on any deployed domain or local dev server)
-  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  // Dynamic host URL with subpaths (e.g. /the-smart-dafter/)
+  const currentOrigin = typeof window !== 'undefined' ? window.location.href.split('?')[0] : 'http://localhost:5173';
   const [customHost, setCustomHost] = useState(currentOrigin);
   const activeUrl = customHost || currentOrigin;
 

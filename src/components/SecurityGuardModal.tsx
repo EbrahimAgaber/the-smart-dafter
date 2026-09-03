@@ -18,7 +18,7 @@ import {
   activateLicenseKey,
   LicenseStatus,
 } from '../utils/licenseManager';
-import { playSuccessChime, speakText } from '../utils/speechFeedback';
+import { playSuccessChime } from '../utils/speechFeedback';
 
 interface SecurityGuardModalProps {
   profile: BusinessProfile;
@@ -55,12 +55,6 @@ export const SecurityGuardModal: React.FC<SecurityGuardModalProps> = ({
       setSuccessMsg(isRtl ? result.messageAr : result.messageEn);
       setInputKey('');
       playSuccessChime();
-      speakText(
-        isRtl
-          ? 'تم تفعيل رخصة البرنامج بنجاح'
-          : 'License activated successfully',
-        isRtl ? 'ar' : 'en'
-      );
       if (onLicenseUpdated) {
         onLicenseUpdated(result.status);
       }

@@ -41,32 +41,9 @@ export function playSuccessChime(): void {
   }
 }
 
-// 2. Arabic & English Spoken Voice Feedback
-export function speakText(text: string, lang: 'ar' | 'en' = 'ar'): void {
-  try {
-    if (!('speechSynthesis' in window)) return;
-
-    // Cancel any previous utterance
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = lang === 'ar' ? 'ar-SA' : 'en-US';
-    utterance.rate = 0.95; // Slightly slower for clarity
-    utterance.pitch = 1.0;
-
-    // Pick best matching voice if available
-    const voices = window.speechSynthesis.getVoices();
-    const targetVoice = voices.find((v) =>
-      lang === 'ar' ? v.lang.startsWith('ar') : v.lang.startsWith('en')
-    );
-    if (targetVoice) {
-      utterance.voice = targetVoice;
-    }
-
-    window.speechSynthesis.speak(utterance);
-  } catch (e) {
-    console.warn('Speech synthesis unsupported or failed', e);
-  }
+// 2. Spoken Voice Feedback (Permanently disabled per user request: No robotic synthesizer)
+export function speakText(_text: string, _lang: 'ar' | 'en' = 'ar'): void {
+  // Voice assistant disabled
 }
 
 // 3. Deterministic Palette for Visual Party Avatars

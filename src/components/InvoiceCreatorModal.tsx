@@ -11,12 +11,11 @@ import {
   Check,
   AlertCircle,
   Search,
-  Volume2,
 } from 'lucide-react';
 import { BusinessProfile, Language, LineItem, Party, Product, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency } from '../utils/formatters';
-import { playSuccessChime, speakText, getAvatarColorClass } from '../utils/speechFeedback';
+import { playSuccessChime, getAvatarColorClass } from '../utils/speechFeedback';
 
 interface InvoiceCreatorModalProps {
   type: 'SALE_CREDIT' | 'SUPPLY_CREDIT';
@@ -222,14 +221,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       return;
     }
 
-    // Auditory & spoken feedback for low literacy / illiterate shopkeepers
+    // Auditory feedback
     playSuccessChime();
-    speakText(
-      isRtl
-        ? `تم تسجيل الفاتورة بمبلغ ${totalAmount} ريال على حساب ${selectedParty?.name || 'العميل'}`
-        : `Invoice of ${totalAmount} saved for ${selectedParty?.name || 'customer'}`,
-      isRtl ? 'ar' : 'en'
-    );
 
     onSubmit({
       partyId: selectedPartyId,
@@ -337,17 +330,6 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
               <label className="block text-xs font-bold text-slate-700">
                 {t.selectParty} <span className="text-rose-400">*</span>
               </label>
-              {selectedParty && (
-                <button
-                  type="button"
-                  onClick={() => speakText(`${selectedParty.name}، الرصيد ${selectedParty.currentBalance} ريال`, isRtl ? 'ar' : 'en')}
-                  title={isRtl ? 'استمع لاسم الحساب' : 'Listen'}
-                  className="flex items-center gap-1 text-[11px] text-cyan-700 hover:text-cyan-800 font-semibold"
-                >
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <span>{isRtl ? 'استمع' : 'Listen'}</span>
-                </button>
-              )}
             </div>
             <div className="flex items-center gap-2">
               {selectedParty && (

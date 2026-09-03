@@ -14,7 +14,6 @@ import {
   Copy,
   Check,
   Trash2,
-  Volume2,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
@@ -22,7 +21,6 @@ import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
 import { exportElementToPdf, sharePdfFile } from '../utils/pdfGenerator';
 import { generateZatcaTlvQrString } from '../utils/zatca';
-import { speakText } from '../utils/speechFeedback';
 
 interface InvoicePdfModalProps {
   transaction: Transaction;
@@ -213,21 +211,6 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
               </button>
             )}
 
-            {/* Audio Listen for Low-literacy Users */}
-            <button
-              onClick={() => {
-                const remaining = transaction.totalAmount - transaction.paidAmount;
-                const textToSpeak = isRtl
-                  ? `${docTitle}، باسم ${party.name}. المبلغ الإجمالي ${transaction.totalAmount} ريال. المدفوع ${transaction.paidAmount} ريال. المتبقي ${remaining} ريال.`
-                  : `${docTitle} for ${party.name}. Total amount ${transaction.totalAmount}. Paid ${transaction.paidAmount}. Remaining ${remaining}.`;
-                speakText(textToSpeak, isRtl ? 'ar' : 'en');
-              }}
-              title={isRtl ? 'استمع للسند صوتيًا' : 'Listen out loud'}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold border border-amber-200 transition-colors shadow-2xs"
-            >
-              <Volume2 className="w-3.5 h-3.5 text-amber-700" />
-              <span className="hidden md:inline">{isRtl ? 'استمع' : 'Listen'}</span>
-            </button>
 
             {/* Share PDF File (iOS Share Sheet / Native Web Share) */}
             <button

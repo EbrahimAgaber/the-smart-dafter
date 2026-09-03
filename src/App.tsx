@@ -284,6 +284,17 @@ export default function App() {
       lang={lang}
       onToggleLang={handleToggleLang}
       onOpenPhonePairing={() => setActiveModal('phone-pairing')}
+      bottomBar={
+        <BottomNavigation
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            setSelectedPartyForLedger(null);
+            setActiveTab(tab);
+          }}
+          lang={lang}
+          receivablesCount={activeDebtorsCount}
+        />
+      }
     >
       {/* PWA Install Banner */}
       <PWAInstallBanner
@@ -394,17 +405,6 @@ export default function App() {
           onOpenKeyGenerator={() => setActiveModal('admin-keygen')}
         />
       )}
-
-      {/* Global Bottom Tab Navigation */}
-      <BottomNavigation
-        activeTab={activeTab}
-        onSelectTab={(tab) => {
-          setSelectedPartyForLedger(null);
-          setActiveTab(tab);
-        }}
-        lang={lang}
-        receivablesCount={activeDebtorsCount}
-      />
 
       {/* Modals with AnimatePresence */}
       <AnimatePresence>

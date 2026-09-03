@@ -15,13 +15,12 @@ import {
   Trash2,
   Edit2,
   X,
-  Volume2,
   Contact,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, PartyType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
-import { playSuccessChime, speakText, getAvatarColorClass } from '../utils/speechFeedback';
+import { playSuccessChime, getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PartyDirectoryViewProps {
   parties: Party[];
@@ -371,22 +370,6 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                       {isSettled ? (
                         <CheckCircle2 className="w-3.5 h-3.5 text-green-600 shrink-0" />
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          speakText(
-                            isRtl
-                              ? `${party.name}، الرصيد ${party.currentBalance} ريال`
-                              : `${party.name}, Balance ${party.currentBalance}`,
-                            isRtl ? 'ar' : 'en'
-                          );
-                        }}
-                        title={isRtl ? 'استمع للاسم والرصيد' : 'Listen'}
-                        className="p-1 rounded-md text-slate-400 hover:text-cyan-700 transition-colors"
-                      >
-                        <Volume2 className="w-3.5 h-3.5 text-cyan-600" />
-                      </button>
                     </div>
 
                     <div className="text-xs text-slate-400 flex items-center gap-3 mt-1 flex-wrap">

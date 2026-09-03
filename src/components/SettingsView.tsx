@@ -23,6 +23,7 @@ import {
   ShieldAlert,
   KeyRound,
   RefreshCw,
+  MessageSquare,
 } from 'lucide-react';
 import { BusinessProfile, Language } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -110,29 +111,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleShareBeta = async () => {
-    const url = window.location.origin;
-    if (navigator.share) {
+    const url = window.location.href.split('?')[0];
+    const shareTitle = 'الدفتر الذكي - Daftar Smart';
+    const shareText = isRtl
+      ? 'تطبيق الدفتر الذكي لإدارة الفواتير والديون ونقاط البيع السريعة: '
+      : 'Daftar Smart app for POS, credit ledger, invoices, and thermal receipts: ';
+
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
       try {
         await navigator.share({
-          title: 'الدفتر الذكي - Daftar Smart',
-          text: isRtl
-            ? 'تطبيق الدفتر الذكي لإدارة الفواتير والديون ونقاط البيع السريعة:'
-            : 'Daftar Smart app for POS, credit ledger, invoices, and thermal receipts:',
+          title: shareTitle,
+          text: shareText,
           url,
         });
         return;
-      } catch (e) {
-        // User cancelled or share not permitted, fallback to copy
+      } catch (e: any) {
+        if (e?.name === 'AbortError') return;
       }
     }
+
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(`${shareText}\n${url}`);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 3000);
-    } catch (e) {
+    } catch {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 3000);
     }
+  };
+
+  const handleShareWhatsAppBeta = () => {
+    const url = window.location.href.split('?')[0];
+    const shareText = isRtl
+      ? 'تطبيق الدفتر الذكي لإدارة الفواتير والديون ونقاط البيع السريعة: '
+      : 'Daftar Smart app for POS, credit ledger, invoices, and thermal receipts: ';
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText + '\n' + url)}`;
+    window.open(waUrl, '_blank');
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -678,7 +692,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 active:scale-98 text-white text-xs font-bold transition-all shadow-md shadow-sky-950/20"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'مشاركة رابط التطبيق' : 'Share App Link'}</span>
+            <span>{isRtl ? 'مشاركة الرابط' : 'Share Link'}</span>
+          </button>
+
+          <button
+            id="btn-whatsapp-share-app"
+            type="button"
+            onClick={handleShareWhatsAppBeta}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white text-xs font-bold transition-all shadow-md shadow-emerald-950/20"
+            title={isRtl ? 'مشاركة عبر واتساب' : 'Share via WhatsApp'}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'واتساب' : 'WhatsApp'}</span>
           </button>
 
           {onOpenPhonePairing && (

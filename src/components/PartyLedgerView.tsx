@@ -18,12 +18,11 @@ import {
   Printer,
   ChevronDown,
   Trash2,
-  Volume2,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, formatShortDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
-import { speakText, getAvatarColorClass } from '../utils/speechFeedback';
+import { getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PartyLedgerViewProps {
   party: Party;
@@ -167,19 +166,6 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
                 <h1 className="text-base font-bold text-slate-900">
                   {party.name}
                 </h1>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const text = isRtl
-                      ? `كشف حساب ${party.name}، الرصيد الحالي ${party.currentBalance} ريال`
-                      : `Statement for ${party.name}, current balance ${party.currentBalance}`;
-                    speakText(text, isRtl ? 'ar' : 'en');
-                  }}
-                  title={isRtl ? 'استمع لكشف الحساب' : 'Listen'}
-                  className="p-1 rounded-md text-slate-400 hover:text-cyan-700 transition-colors"
-                >
-                  <Volume2 className="w-3.5 h-3.5 text-cyan-600" />
-                </button>
               </div>
 
               <div className="flex items-center gap-2 text-xs text-slate-400 mt-1 flex-wrap">

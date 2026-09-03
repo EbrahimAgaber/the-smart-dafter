@@ -8,12 +8,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Building2,
-  Volume2,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, PaymentMethod, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency } from '../utils/formatters';
-import { playSuccessChime, speakText, getAvatarColorClass } from '../utils/speechFeedback';
+import { playSuccessChime, getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PaymentReceiptModalProps {
   type: 'PAYMENT_RECEIVED' | 'PAYMENT_PAID';
@@ -99,16 +98,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
       return;
     }
 
-    // Audio chime & speech feedback
+    // Audio chime
     playSuccessChime();
-    speakText(
-      isRtl
-        ? isReceipt
-          ? `تم استلام دفعة بمبلغ ${parsedAmount} ريال من ${selectedParty?.name || 'العميل'}`
-          : `تم صرف دفعة بمبلغ ${parsedAmount} ريال للمورد ${selectedParty?.name || ''}`
-        : `Payment of ${parsedAmount} recorded for ${selectedParty?.name || 'party'}`,
-      isRtl ? 'ar' : 'en'
-    );
 
     onSubmit({
       partyId: selectedPartyId,
@@ -183,17 +174,6 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <label className="block text-xs font-bold text-slate-700">
                 {isReceipt ? (isRtl ? 'استلمنا من السيد / العميل:' : 'Received From Customer:') : (isRtl ? 'صُرف إلى المورد / الجهة:' : 'Paid To Supplier:')}
               </label>
-              {selectedParty && (
-                <button
-                  type="button"
-                  onClick={() => speakText(`${selectedParty.name}، الرصيد المستحق ${currentOutstanding} ريال`, isRtl ? 'ar' : 'en')}
-                  title={isRtl ? 'استمع لاسم الحساب والرصيد' : 'Listen'}
-                  className="flex items-center gap-1 text-[11px] text-sky-700 hover:text-sky-800 font-semibold"
-                >
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <span>{isRtl ? 'استمع' : 'Listen'}</span>
-                </button>
-              )}
             </div>
             <div className="flex items-center gap-2">
               {selectedParty && (

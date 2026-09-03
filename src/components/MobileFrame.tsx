@@ -4,6 +4,7 @@ import { Language } from '../types';
 
 interface MobileFrameProps {
   children: React.ReactNode;
+  bottomBar?: React.ReactNode;
   lang: Language;
   onToggleLang: () => void;
   onOpenPhonePairing?: () => void;
@@ -11,6 +12,7 @@ interface MobileFrameProps {
 
 export const MobileFrame: React.FC<MobileFrameProps> = ({
   children,
+  bottomBar,
   lang,
   onToggleLang,
   onOpenPhonePairing,
@@ -91,13 +93,20 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
             : 'h-[100dvh] md:min-h-screen md:h-auto max-w-full md:max-w-3xl md:rounded-3xl md:border md:border-slate-200 overflow-hidden shadow-slate-200/50'
         }`}
       >
-        {/* Mobile View Content Area with Safe Area Insets for iOS Notch / Dynamic Island / Home Bar */}
+        {/* Scrollable Mobile View Content Area */}
         <div
           id="mobile-content-area"
-          className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative pt-[env(safe-area-inset-top,0.5rem)] md:pt-2 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))] print:pt-0 print:pb-0 scroll-smooth bg-[#F8FAFC] print:bg-white"
+          className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative pt-[env(safe-area-inset-top,0.5rem)] md:pt-2 pb-6 print:pt-0 print:pb-0 scroll-smooth bg-[#F8FAFC] print:bg-white"
         >
           {children}
         </div>
+
+        {/* Permanently Pinned Bottom Navigation Bar */}
+        {bottomBar && (
+          <div id="mobile-bottom-bar-wrapper" className="shrink-0 w-full z-30">
+            {bottomBar}
+          </div>
+        )}
       </main>
     </div>
   );
