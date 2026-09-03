@@ -1,0 +1,467 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { AnimatePresence } from 'motion/react';
+import {
+  ActiveTab,
+  BusinessProfile,
+  Language,
+  LineItem,
+  Party,
+  PaymentMethod,
+  Product,
+  Transaction,
+  TransactionType,
+} from './types';
+import { SQLiteLedgerStore } from './db/sqliteStorage';
+import { MobileFrame } from './components/MobileFrame';
+import { BottomNavigation } from './components/BottomNavigation';
+import { DashboardView } from './components/DashboardView';
+import { PartyDirectoryView } from './components/PartyDirectoryView';
+import { PartyLedgerView } from './components/PartyLedgerView';
+import { ProductsCatalogModal } from './components/ProductsCatalogModal';
+import { SettingsView } from './components/SettingsView';
+import { InvoiceCreatorModal } from './components/InvoiceCreatorModal';
+import { PaymentReceiptModal } from './components/PaymentReceiptModal';
+import { InvoicePdfModal } from './components/InvoicePdfModal';
+import { StatementPdfModal } from './components/StatementPdfModal';
+import { PhonePairingModal } from './components/PhonePairingModal';
+import { StoreSetupWizardModal } from './components/StoreSetupWizardModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
+
+type ModalType =
+  | null
+  | 'invoice-sale'
+  | 'invoice-supply'
+  | 'receipt'
+  | 'voucher'
+  | 'invoice-pdf'
+  | 'statement-pdf'
+  | 'phone-pairing'
+  | 'store-setup';
+
+export default function App() {
+  const store = useMemo(() => SQLiteLedgerStore.getInstance(), []);
+
+  const [lang, setLang] = useState<Language>(() => {
+    return (localStorage.getItem('daftar_smart_lang') as Language) || 'ar';
+  });
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+  const [parties, setParties] = useState<Party[]>(() => store.getParties());
+  const [products, setProducts] = useState<Product[]>(() => store.getProducts());
+  const [transactions, setTransactions] = useState<Transaction[]>(() => store.getTransactions());
+  const [profile, setProfile] = useState<BusinessProfile>(() => store.getProfile());
+  const [metrics, setMetrics] = useState(() => store.getDashboardMetrics());
+
+  // Navigation states
+  const [selectedPartyForLedger, setSelectedPartyForLedger] = useState<Party | null>(null);
+
+  // Modals state
+  const [activeModal, setActiveModal] = useState<ModalType>(null);
+  const [modalParty, setModalParty] = useState<Party | null>(null);
+  const [activeTxForPdf, setActiveTxForPdf] = useState<Transaction | null>(null);
+
+  // Sync HTML dir and lang
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    localStorage.setItem('daftar_smart_lang', lang);
+  }, [lang]);
+
+  // Refresh local state from store
+  const refreshStoreData = useCallback(() => {
+    setParties(store.getParties());
+    setProducts(store.getProducts());
+    setTransactions(store.getTransactions());
+    setProfile(store.getProfile());
+    setMetrics(store.getDashboardMetrics());
+
+    // Update selected party reference if open
+    setSelectedPartyForLedger((prev) => (prev ? store.getPartyById(prev.id) || null : null));
+  }, [store]);
+
+  const handleToggleLang = () => {
+    setLang((prev) => (prev === 'ar' ? 'en' : 'ar'));
+  };
+
+  // Transaction submission handler
+  const handleCreateTransaction = (txData: {
+    partyId: string;
+    type: TransactionType;
+    items: LineItem[];
+    totalAmount: number;
+    paidAmount: number;
+    remainingBalanceDelta: number;
+    notes: string;
+    paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
+  }) => {
+    const newTx = store.addTransaction(txData);
+    refreshStoreData();
+    setActiveModal(null);
+
+    // Prompt receipt / invoice PDF for immediate view or WhatsApp sharing
+    const party = store.getPartyById(txData.partyId);
+    if (party) {
+      setActiveTxForPdf(newTx);
+      setModalParty(party);
+      setActiveModal('invoice-pdf');
+    }
+  };
+
+  // Payment receipt submission handler
+  const handleCreateReceipt = (data: {
+    partyId: string;
+    type: TransactionType;
+    amount: number;
+    paymentMethod: PaymentMethod;
+    notes: string;
+  }) => {
+    const isCustomerReceipt = data.type === 'PAYMENT_RECEIVED';
+    const newTx = store.addTransaction({
+      partyId: data.partyId,
+      type: data.type,
+      date: new Date().toISOString(),
+      items: [],
+      totalAmount: data.amount,
+      paidAmount: data.amount,
+      remainingBalanceDelta: isCustomerReceipt ? -data.amount : -data.amount,
+      notes: data.notes,
+      paymentMethod: data.paymentMethod,
+    });
+
+    refreshStoreData();
+    setActiveModal(null);
+
+    const party = store.getPartyById(data.partyId);
+    if (party) {
+      setActiveTxForPdf(newTx);
+      setModalParty(party);
+      setActiveModal('invoice-pdf');
+    }
+  };
+
+  // Party CRUD handlers
+  const handleAddParty = (partyData: Omit<Party, 'id' | 'currentBalance' | 'createdAt'>) => {
+    store.addParty(partyData);
+    refreshStoreData();
+  };
+
+  const handleUpdateParty = (id: string, updates: Partial<Party>) => {
+    store.updateParty(id, updates);
+    refreshStoreData();
+  };
+
+  const handleDeleteParty = (id: string) => {
+    store.deleteParty(id);
+    if (selectedPartyForLedger?.id === id) {
+      setSelectedPartyForLedger(null);
+    }
+    refreshStoreData();
+  };
+
+  // Product CRUD handlers
+  const handleAddProduct = (prodData: Omit<Product, 'id'>) => {
+    store.addProduct(prodData);
+    refreshStoreData();
+  };
+
+  const handleUpdateProduct = (id: string, updates: Partial<Product>) => {
+    store.updateProduct(id, updates);
+    refreshStoreData();
+  };
+
+  const handleDeleteProduct = (id: string) => {
+    store.deleteProduct(id);
+    refreshStoreData();
+  };
+
+  // Profile Update
+  const handleUpdateProfile = (updates: Partial<BusinessProfile>) => {
+    store.updateProfile(updates);
+    refreshStoreData();
+  };
+
+  // Export / Import / Reset demo data
+  const handleExportBackup = () => {
+    const json = store.exportDataJSON();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `daftar_smart_backup_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = (jsonString: string) => {
+    const ok = store.importDataJSON(jsonString);
+    if (ok) {
+      refreshStoreData();
+    }
+    return ok;
+  };
+
+  const handleResetDemoData = () => {
+    store.resetToDefaults();
+    setSelectedPartyForLedger(null);
+    refreshStoreData();
+  };
+
+  const handleSaveStoreSetup = (
+    updatedProfile: Partial<BusinessProfile>,
+    freshStart: boolean
+  ) => {
+    if (freshStart) {
+      store.clearToFreshStart(updatedProfile);
+      setSelectedPartyForLedger(null);
+    } else {
+      store.updateProfile(updatedProfile);
+    }
+    refreshStoreData();
+  };
+
+  // Count active debtors for bottom badge
+  const activeDebtorsCount = useMemo(() => {
+    return parties.filter((p) => p.type === 'CUSTOMER' && p.currentBalance > 0).length;
+  }, [parties]);
+
+  return (
+    <MobileFrame
+      lang={lang}
+      onToggleLang={handleToggleLang}
+      onOpenPhonePairing={() => setActiveModal('phone-pairing')}
+    >
+      {/* PWA Install Banner */}
+      <PWAInstallBanner
+        lang={lang}
+        onOpenPhonePairing={() => setActiveModal('phone-pairing')}
+      />
+
+      {/* View routing depending on activeTab or dedicated ledger view */}
+      {selectedPartyForLedger ? (
+        <PartyLedgerView
+          party={selectedPartyForLedger}
+          transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
+          profile={profile}
+          lang={lang}
+          onBack={() => setSelectedPartyForLedger(null)}
+          onOpenReceivePayment={() => {
+            setModalParty(selectedPartyForLedger);
+            setActiveModal(
+              selectedPartyForLedger.type === 'CUSTOMER' ? 'receipt' : 'voucher'
+            );
+          }}
+          onOpenNewSale={() => {
+            setModalParty(selectedPartyForLedger);
+            setActiveModal(
+              selectedPartyForLedger.type === 'CUSTOMER'
+                ? 'invoice-sale'
+                : 'invoice-supply'
+            );
+          }}
+          onOpenStatementPdf={() => {
+            setActiveModal('statement-pdf');
+          }}
+          onSelectTransaction={(tx) => {
+            setActiveTxForPdf(tx);
+            setModalParty(selectedPartyForLedger);
+            setActiveModal('invoice-pdf');
+          }}
+        />
+      ) : activeTab === 'dashboard' ? (
+        <DashboardView
+          metrics={metrics}
+          parties={parties}
+          recentTransactions={transactions}
+          profile={profile}
+          lang={lang}
+          onOpenNewSale={() => {
+            setModalParty(null);
+            setActiveModal('invoice-sale');
+          }}
+          onOpenReceivePayment={() => {
+            setModalParty(null);
+            setActiveModal('receipt');
+          }}
+          onOpenNewSupply={() => {
+            setModalParty(null);
+            setActiveModal('invoice-supply');
+          }}
+          onOpenPayDistributor={() => {
+            setModalParty(null);
+            setActiveModal('voucher');
+          }}
+          onSelectTransaction={(tx) => {
+            const p = store.getPartyById(tx.partyId);
+            if (p) {
+              setActiveTxForPdf(tx);
+              setModalParty(p);
+              setActiveModal('invoice-pdf');
+            }
+          }}
+          onNavigateParties={() => setActiveTab('parties')}
+        />
+      ) : activeTab === 'parties' ? (
+        <PartyDirectoryView
+          parties={parties}
+          profile={profile}
+          lang={lang}
+          onSelectPartyLedger={(party) => setSelectedPartyForLedger(party)}
+          onOpenReceivePaymentForParty={(party) => {
+            setModalParty(party);
+            setActiveModal(party.type === 'CUSTOMER' ? 'receipt' : 'voucher');
+          }}
+          onOpenNewSaleForParty={(party) => {
+            setModalParty(party);
+            setActiveModal(
+              party.type === 'CUSTOMER' ? 'invoice-sale' : 'invoice-supply'
+            );
+          }}
+          onAddParty={handleAddParty}
+          onUpdateParty={handleUpdateParty}
+          onDeleteParty={handleDeleteParty}
+        />
+      ) : activeTab === 'products' ? (
+        <ProductsCatalogModal
+          products={products}
+          profile={profile}
+          lang={lang}
+          onAddProduct={handleAddProduct}
+          onUpdateProduct={handleUpdateProduct}
+          onDeleteProduct={handleDeleteProduct}
+        />
+      ) : (
+        <SettingsView
+          profile={profile}
+          lang={lang}
+          onUpdateProfile={handleUpdateProfile}
+          onToggleLang={handleToggleLang}
+          onExportBackup={handleExportBackup}
+          onImportBackup={handleImportBackup}
+          onResetDemoData={handleResetDemoData}
+          onOpenPhonePairing={() => setActiveModal('phone-pairing')}
+          onOpenStoreSetup={() => setActiveModal('store-setup')}
+        />
+      )}
+
+      {/* Global Bottom Tab Navigation */}
+      <BottomNavigation
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          setSelectedPartyForLedger(null);
+          setActiveTab(tab);
+        }}
+        lang={lang}
+        receivablesCount={activeDebtorsCount}
+      />
+
+      {/* Modals with AnimatePresence */}
+      <AnimatePresence>
+        {/* Modal: Fast POS / Credit Sale */}
+        {activeModal === 'invoice-sale' && (
+          <InvoiceCreatorModal
+            key="modal-invoice-sale"
+            type="SALE_CREDIT"
+            parties={parties}
+            products={products}
+            profile={profile}
+            lang={lang}
+            initialPartyId={modalParty?.id}
+            onClose={() => setActiveModal(null)}
+            onSubmit={handleCreateTransaction}
+          />
+        )}
+
+        {/* Modal: Fast POS / Supply Intake */}
+        {activeModal === 'invoice-supply' && (
+          <InvoiceCreatorModal
+            key="modal-invoice-supply"
+            type="SUPPLY_CREDIT"
+            parties={parties}
+            products={products}
+            profile={profile}
+            lang={lang}
+            initialPartyId={modalParty?.id}
+            onClose={() => setActiveModal(null)}
+            onSubmit={handleCreateTransaction}
+          />
+        )}
+
+        {/* Modal: Payment Receipt (سند قبض من عميل) */}
+        {activeModal === 'receipt' && (
+          <PaymentReceiptModal
+            key="modal-payment-receipt"
+            type="PAYMENT_RECEIVED"
+            parties={parties}
+            profile={profile}
+            lang={lang}
+            initialPartyId={modalParty?.id}
+            onClose={() => setActiveModal(null)}
+            onSubmit={handleCreateReceipt}
+          />
+        )}
+
+        {/* Modal: Payment Voucher (سند صرف لمورد) */}
+        {activeModal === 'voucher' && (
+          <PaymentReceiptModal
+            key="modal-payment-voucher"
+            type="PAYMENT_PAID"
+            parties={parties}
+            profile={profile}
+            lang={lang}
+            initialPartyId={modalParty?.id}
+            onClose={() => setActiveModal(null)}
+            onSubmit={handleCreateReceipt}
+          />
+        )}
+
+        {/* Modal: Invoice & Receipt PDF Preview */}
+        {activeModal === 'invoice-pdf' && activeTxForPdf && modalParty && (
+          <InvoicePdfModal
+            key="modal-invoice-pdf"
+            transaction={activeTxForPdf}
+            party={modalParty}
+            profile={profile}
+            lang={lang}
+            onClose={() => {
+              setActiveModal(null);
+              setActiveTxForPdf(null);
+            }}
+          />
+        )}
+
+        {/* Modal: Detailed Account Statement PDF */}
+        {activeModal === 'statement-pdf' && selectedPartyForLedger && (
+          <StatementPdfModal
+            key="modal-statement-pdf"
+            party={selectedPartyForLedger}
+            transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
+            profile={profile}
+            lang={lang}
+            onClose={() => setActiveModal(null)}
+          />
+        )}
+
+        {/* Modal: Test on Phone / Mobile QR Pairing */}
+        {activeModal === 'phone-pairing' && (
+          <PhonePairingModal
+            key="modal-phone-pairing"
+            lang={lang}
+            onClose={() => setActiveModal(null)}
+            onOpenStoreSetup={() => setActiveModal('store-setup')}
+          />
+        )}
+
+        {/* Modal: Real Store Setup Wizard */}
+        {activeModal === 'store-setup' && (
+          <StoreSetupWizardModal
+            key="modal-store-setup"
+            currentProfile={profile}
+            lang={lang}
+            onClose={() => setActiveModal(null)}
+            onSaveSetup={handleSaveStoreSetup}
+          />
+        )}
+      </AnimatePresence>
+    </MobileFrame>
+  );
+}

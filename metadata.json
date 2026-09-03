@@ -1,0 +1,6 @@
+{
+  "name": "Daftar Smart - الدفتر الذكي",
+  "description": "Production-grade bilingual (Arabic RTL / English LTR) mobile ledger application for tracking customer and distributor credit (آجل), invoices, receipts, and PDF statements.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
