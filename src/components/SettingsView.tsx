@@ -22,6 +22,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   KeyRound,
+  RefreshCw,
 } from 'lucide-react';
 import { BusinessProfile, Language } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -82,6 +83,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setDevTapCount(next);
       setTimeout(() => setDevTapCount(0), 3000);
     }
+  };
+
+  const [isSyncingUpdates, setIsSyncingUpdates] = useState(false);
+
+  const handleForceSyncUpdates = async () => {
+    setIsSyncingUpdates(true);
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.update();
+        }
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {
+      console.warn('Update check error', e);
+    }
+    window.location.reload();
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -587,6 +609,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         );
       })()}
+
+      {/* App Updates & Instant Sync Card */}
+      <div
+        id="settings-sync-update-card"
+        className="p-4 bg-white rounded-3xl border border-slate-200 space-y-3 shadow-2xs"
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+          <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
+            <RefreshCw className="w-4 h-4 text-cyan-600" />
+            <span>{isRtl ? 'التحديث التلقائي ومزامنة الإصدار' : 'App Updates & Sync'}</span>
+          </div>
+          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+            {isRtl ? 'تزامن مباشر' : 'Live Sync'}
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 leading-relaxed">
+          {isRtl
+            ? 'يقوم التطبيق بالتحقق التلقائي من التحديثات وتطبيقها فوراً دون الحاجة لإعادة التثبيت. يمكنك أيضاً فرض التحديث الفوري بضغطة واحدة.'
+            : 'The app checks for updates automatically without reinstallation. You can also force-sync immediately with one tap.'}
+        </p>
+
+        <button
+          type="button"
+          onClick={handleForceSyncUpdates}
+          disabled={isSyncingUpdates}
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-800 text-xs font-bold border border-slate-300/70 transition-all shadow-2xs"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 ${isSyncingUpdates ? 'animate-spin' : ''}`} />
+          <span>{isSyncingUpdates ? (isRtl ? 'جاري فحص وتطبيق التحديثات...' : 'Syncing update...') : (isRtl ? '🔄 فحص وتطبيق أحدث تحديث الآن' : '🔄 Check & Sync Latest Update Now')}</span>
+        </button>
+      </div>
 
       {/* About Application & Sharing Card */}
       <div

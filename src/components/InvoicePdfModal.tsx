@@ -47,6 +47,9 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>('');
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   const isSale = transaction.type === 'SALE_CREDIT';
   const isSupply = transaction.type === 'SUPPLY_CREDIT';
@@ -58,29 +61,25 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   const docTitle = isSale
     ? isVatApplied
       ? (isRtl ? 'فاتورة ضريبية مبسطة' : 'Simplified Tax Invoice')
-      : (isRtl ? 'فاتورة مبيعات بالآجل' : 'Credit Sale Invoice')
+      : (isRtl ? 'فاتورة بيع آجل' : 'Credit Sale Invoice')
     : isSupply
-    ? isVatApplied
-      ? (isRtl ? 'فاتورة توريد ضريبية' : 'Tax Supply Invoice')
-      : (isRtl ? 'فاتورة توريد بالآجل' : 'Supply Intake Invoice')
+    ? (isRtl ? 'سند توريد بالآجل' : 'Credit Supply Note')
     : isReceipt
-    ? (isRtl ? 'سند قبض مالي' : 'Receipt Voucher')
-    : (isRtl ? 'سند صرف مالي' : 'Payment Voucher');
+    ? (isRtl ? 'سند قبض مالي' : 'Payment Receipt Voucher')
+    : (isRtl ? 'سند صرف نقدي' : 'Payment Voucher');
 
-  const pdfFileName = `${(profile.name || 'Daftar').replace(/\s+/g, '_')}_${transaction.receiptNumber}.pdf`;
+  const pdfFileName = `${profile.name.replace(/\s+/g, '_')}_${docTitle.replace(/\s+/g, '_')}_${transaction.receiptNumber}.pdf`;
 
-  // Generate ZATCA compliant TLV QR code if VAT applied, or standard verification QR
+  // Pre-generate ZATCA QR Code
   useEffect(() => {
     try {
-      const qrData = (isVatApplied && profile.taxNumber)
-        ? generateZatcaTlvQrString({
-            sellerName: profile.name || 'Daftar Smart',
-            vatNumber: profile.taxNumber,
-            timestamp: transaction.date,
-            totalAmount: transaction.totalAmount,
-            vatAmount: transaction.taxAmount || 0,
-          })
-        : `INVOICE:${transaction.receiptNumber}|STORE:${profile.name || 'Daftar'}|PARTY:${party.name}|TOTAL:${transaction.totalAmount}|DATE:${transaction.date}`;
+      const qrData = generateZatcaTlvQrString({
+        sellerName: profile.name,
+        vatNumber: profile.vatNumber || '',
+        timestamp: transaction.date,
+        totalAmount: transaction.totalAmount,
+        vatAmount: isVatApplied ? (transaction.taxAmount || 0) : 0,
+      });
 
       QRCode.toDataURL(qrData, { width: 140, margin: 1 })
         .then((url) => setZatcaQrUrl(url))
@@ -90,6 +89,27 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   }, [profile, transaction, party, isVatApplied]);
 
+  // Background pre-generate PDF Blob so iOS user click gesture is preserved instantly!
+  useEffect(() => {
+    let mounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        const b = await exportElementToPdf('invoice-render-target', pdfFileName, false);
+        if (mounted && b) {
+          setPdfBlob(b);
+          setPdfUrl(URL.createObjectURL(b));
+        }
+      } catch (e) {
+        console.warn('Precomputing PDF failed:', e);
+      }
+    }, 450);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+    };
+  }, [profile, transaction, party, zatcaQrUrl, isVatApplied]);
+
   const handleDownloadPdf = async () => {
     setIsGenerating(true);
     await exportElementToPdf('invoice-render-target', pdfFileName, true);
@@ -98,8 +118,27 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
 
   const handleSharePdf = async () => {
     setIsGenerating(true);
-    await sharePdfFile('invoice-render-target', pdfFileName, `${docTitle} - #${transaction.receiptNumber}`);
-    setIsGenerating(false);
+    setShareFeedback(null);
+    try {
+      const result = await sharePdfFile(
+        'invoice-render-target',
+        pdfFileName,
+        `${docTitle} - #${transaction.receiptNumber}`,
+        pdfBlob
+      );
+      if (result.success) {
+        if (result.url) {
+          setPdfUrl(result.url);
+          setShareFeedback(isRtl ? 'تم تجهيز ملف PDF بنجاح!' : 'PDF ready!');
+        }
+      } else {
+        alert(isRtl ? 'تعذر إنشاء ملف PDF. يرجى المحاولة مجدداً.' : 'Could not generate PDF. Please retry.');
+      }
+    } catch (err: any) {
+      console.error('Share error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleWhatsAppShare = () => {
@@ -475,6 +514,25 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
             </div>
           </div>
         </div>
+        {/* PDF Ready Direct Access Banner */}
+        {pdfUrl && (
+          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-emerald-800 flex items-center gap-1.5 truncate">
+              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="truncate">{shareFeedback || (isRtl ? 'ملف PDF جاهز للمشاركة والحفظ' : 'PDF ready for sharing & saving')}</span>
+            </span>
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download={pdfFileName}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'فتح / حفظ PDF' : 'Open / Save PDF'}</span>
+            </a>
+          </div>
+        )}
 
         {/* Bottom Fast Action Bar */}
         <div className="border-t border-slate-200 pt-3 flex items-center justify-between gap-2 text-xs shrink-0 flex-wrap">

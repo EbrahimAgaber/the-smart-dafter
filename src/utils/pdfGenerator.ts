@@ -1,31 +1,44 @@
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
+export interface PdfExportResult {
+  success: boolean;
+  blob?: Blob;
+  url?: string;
+  method?: 'native_share' | 'browser_open' | 'download_fallback';
+  error?: string;
+}
+
 export async function exportElementToPdf(
   elementId: string,
   fileName = 'document.pdf',
-  autoDownload = true
+  autoDownload = false
 ): Promise<Blob | null> {
   const element = document.getElementById(elementId);
   if (!element) {
-    console.error(`Element with id ${elementId} not found`);
+    console.error(`Element with id "${elementId}" not found`);
     return null;
   }
 
   try {
+    // Generate crisp canvas with settings tuned for iOS WebKit & Android mobile
     const canvas = await html2canvas(element, {
-      scale: 2, // High resolution for crisp text
+      scale: 1.5, // 1.5x gives high resolution without exceeding iOS canvas RAM limits
       useCORS: true,
+      allowTaint: true,
       logging: false,
       backgroundColor: '#ffffff',
-      windowWidth: 800,
+      scrollX: 0,
+      scrollY: 0,
+      imageTimeout: 15000,
     });
 
-    const imgData = canvas.toDataURL('image/png');
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
+      compress: true,
     });
 
     const imgWidth = 210; // A4 width in mm
@@ -34,13 +47,13 @@ export async function exportElementToPdf(
     let heightLeft = imgHeight;
     let position = 0;
 
-    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
 
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
       heightLeft -= pageHeight;
     }
 
@@ -48,8 +61,8 @@ export async function exportElementToPdf(
       pdf.save(fileName);
     }
     return pdf.output('blob');
-  } catch (error) {
-    console.error('Error generating PDF:', error);
+  } catch (error: any) {
+    console.error('Error generating PDF canvas:', error);
     return null;
   }
 }
@@ -57,51 +70,66 @@ export async function exportElementToPdf(
 export async function sharePdfFile(
   elementId: string,
   fileName = 'document.pdf',
-  title = 'Document'
-): Promise<boolean> {
+  title = 'Document',
+  precomputedBlob?: Blob | null
+): Promise<PdfExportResult> {
   const safeFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
 
   try {
-    const blob = await exportElementToPdf(elementId, safeFileName, false);
-    if (!blob) return false;
+    const blob = precomputedBlob || (await exportElementToPdf(elementId, safeFileName, false));
+    if (!blob) {
+      return { success: false, error: 'Could not generate PDF from document' };
+    }
 
-    // Create standard File object
     const file = new File([blob], safeFileName, { type: 'application/pdf' });
 
-    // Check if Web Share API with files is supported (mobile iOS Safari, Android Chrome, etc.)
-    const canShareFiles = typeof navigator !== 'undefined' &&
-      navigator.canShare &&
+    // 1. Try Native Web Share API with files (iOS Safari, Android Chrome)
+    const canShareFiles =
+      typeof navigator !== 'undefined' &&
+      typeof navigator.canShare === 'function' &&
       navigator.canShare({ files: [file] });
 
-    if (canShareFiles && navigator.share) {
+    if (canShareFiles && typeof navigator.share === 'function') {
       try {
         await navigator.share({
           title,
           text: title,
           files: [file],
         });
-        return true;
+        return { success: true, blob, method: 'native_share' };
       } catch (err: any) {
-        // User tapped Cancel / dismissed the share sheet - this is normal behavior
         if (err?.name === 'AbortError') {
-          return true;
+          // User dismissed the native share sheet
+          return { success: true, blob, method: 'native_share' };
         }
-        console.warn('Native share failed, falling back to download:', err);
+        console.warn('Native share failed or gesture timed out, trying fallback:', err);
       }
     }
 
-    // Fallback: direct download if share is unavailable or failed
+    // 2. Open PDF in a new tab / window for iOS native PDF viewer
     const url = URL.createObjectURL(blob);
+    try {
+      const win = window.open(url, '_blank');
+      if (win) {
+        return { success: true, blob, url, method: 'browser_open' };
+      }
+    } catch (e) {
+      console.warn('window.open was blocked, trying anchor download:', e);
+    }
+
+    // 3. Fallback: Trigger anchor download
     const a = document.createElement('a');
     a.href = url;
     a.download = safeFileName;
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-    return true;
-  } catch (error) {
+
+    return { success: true, blob, url, method: 'download_fallback' };
+  } catch (error: any) {
     console.error('Error in sharePdfFile:', error);
-    return false;
+    return { success: false, error: error?.message || 'Unknown share error' };
   }
 }
+

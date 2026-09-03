@@ -1,8 +1,9 @@
-// Daftar Smart Service Worker v2.1
-const CACHE_NAME = 'daftar-smart-v2.1';
+// Daftar Smart Service Worker v2.3
+const CACHE_NAME = 'daftar-smart-v2.3';
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './404.html',
   './manifest.json',
   './icon.svg',
   './favicon.png',
@@ -12,10 +13,16 @@ const STATIC_ASSETS = [
   './apple-touch-icon.png'
 ];
 
+// Handle direct skip waiting message from app client
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      // Add assets individually with catch so one failing asset does not abort install
       for (const asset of STATIC_ASSETS) {
         try {
           await cache.add(asset);
@@ -25,6 +32,7 @@ self.addEventListener('install', (event) => {
       }
     })
   );
+  // Activate immediately without waiting for old clients to close
   self.skipWaiting();
 });
 
@@ -40,58 +48,41 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
+  // Claim all clients immediately so the new service worker controls open pages
   self.clients.claim();
 });
 
+// NETWORK-FIRST STRATEGY:
+// Always fetch the freshest code when online so updates push seamlessly.
+// Fallback to cache seamlessly when offline.
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // Skip non-GET requests
   if (event.request.method !== 'GET') {
     return;
   }
 
-  // Navigation requests: Network First, fallback to cached index.html
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return caches.match('./index.html') || caches.match('./') || caches.match(event.request);
-      })
-    );
-    return;
-  }
-
-  // Google Fonts & Web Fonts: Cache First
-  if (url.origin === 'https://fonts.googleapis.com' || url.origin === 'https://fonts.gstatic.com') {
-    event.respondWith(
-      caches.match(event.request).then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse;
-        return fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return networkResponse;
-        });
-      })
-    );
-    return;
-  }
-
-  // Application assets (JS, CSS, SVGs, PNGs): Stale While Revalidate
+  // Network First, fallback to Cache
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      const fetchPromise = fetch(event.request)
-        .then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            const copy = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return networkResponse;
-        })
-        .catch(() => cachedResponse);
-
-      return cachedResponse || fetchPromise;
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(async () => {
+        // Offline: serve from cache
+        const cached = await caches.match(event.request);
+        if (cached) {
+          return cached;
+        }
+        // If navigating and offline, return cached index.html
+        if (event.request.mode === 'navigate') {
+          return (await caches.match('./index.html')) || (await caches.match('./'));
+        }
+        return new Response('Offline', { status: 503, statusText: 'Offline' });
+      })
   );
 });

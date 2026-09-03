@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import {
   X,
@@ -38,6 +38,9 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
   const isCustomer = party.type === 'CUSTOMER';
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   // Compute ascending ledger entries with rolling running balances
   const statementRows = useMemo(() => {
@@ -83,6 +86,27 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
 
   const pdfFileName = `${profile.name.replace(/\s+/g, '_')}_Statement_${party.name.replace(/\s+/g, '_')}.pdf`;
 
+  // Background pre-generate PDF Blob so iOS user click gesture is preserved instantly
+  useEffect(() => {
+    let mounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        const b = await exportElementToPdf('statement-render-target', pdfFileName, false);
+        if (mounted && b) {
+          setPdfBlob(b);
+          setPdfUrl(URL.createObjectURL(b));
+        }
+      } catch (e) {
+        console.warn('Precomputing Statement PDF failed:', e);
+      }
+    }, 450);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+    };
+  }, [party, transactions, profile]);
+
   const handleDownloadPdf = async () => {
     setIsGenerating(true);
     await exportElementToPdf('statement-render-target', pdfFileName, true);
@@ -91,8 +115,27 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
 
   const handleSharePdf = async () => {
     setIsGenerating(true);
-    await sharePdfFile('statement-render-target', pdfFileName, `${t.statementHeaderTitle} - ${party.name}`);
-    setIsGenerating(false);
+    setShareFeedback(null);
+    try {
+      const result = await sharePdfFile(
+        'statement-render-target',
+        pdfFileName,
+        `${t.statementHeaderTitle} - ${party.name}`,
+        pdfBlob
+      );
+      if (result.success) {
+        if (result.url) {
+          setPdfUrl(result.url);
+          setShareFeedback(isRtl ? 'تم تجهيز كشف الحساب كـ PDF!' : 'Statement PDF ready!');
+        }
+      } else {
+        alert(isRtl ? 'تعذر إنشاء كشف الحساب. يرجى المحاولة ثانية.' : 'Could not generate Statement. Please retry.');
+      }
+    } catch (err) {
+      console.error('Statement share error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleWhatsAppShare = () => {
@@ -347,6 +390,25 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
             </div>
           </div>
         </div>
+        {/* PDF Ready Direct Access Banner */}
+        {pdfUrl && (
+          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
+            <span className="font-bold text-emerald-800 flex items-center gap-1.5 truncate">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span className="truncate">{shareFeedback || (isRtl ? 'كشف الحساب PDF جاهز للمشاركة والحفظ' : 'Statement PDF ready for sharing & saving')}</span>
+            </span>
+            <a
+              href={pdfUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              download={pdfFileName}
+              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-xs active:scale-95 transition-all"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'فتح / حفظ PDF' : 'Open / Save PDF'}</span>
+            </a>
+          </div>
+        )}
 
         {/* Bottom Fast Action Bar */}
         <div className="border-t border-slate-200 pt-3 flex items-center justify-between gap-2 text-xs shrink-0 flex-wrap">
