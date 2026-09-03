@@ -56,34 +56,52 @@ export async function exportElementToPdf(
 
 export async function sharePdfFile(
   elementId: string,
-  fileName = 'statement.pdf',
+  fileName = 'document.pdf',
   title = 'Document'
 ): Promise<boolean> {
+  const safeFileName = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+
   try {
-    const blob = await exportElementToPdf(elementId, fileName, false);
+    const blob = await exportElementToPdf(elementId, safeFileName, false);
     if (!blob) return false;
 
-    // Check if Web Share API with files is supported (mobile browsers, iOS Safari, Android Chrome)
-    if (navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'application/pdf' })] })) {
-      const file = new File([blob], fileName, { type: 'application/pdf' });
-      await navigator.share({
-        title,
-        text: title,
-        files: [file],
-      });
-      return true;
-    } else {
-      // Fallback: PDF is downloaded if share is unavailable
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-      return true;
+    // Create standard File object
+    const file = new File([blob], safeFileName, { type: 'application/pdf' });
+
+    // Check if Web Share API with files is supported (mobile iOS Safari, Android Chrome, etc.)
+    const canShareFiles = typeof navigator !== 'undefined' &&
+      navigator.canShare &&
+      navigator.canShare({ files: [file] });
+
+    if (canShareFiles && navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          text: title,
+          files: [file],
+        });
+        return true;
+      } catch (err: any) {
+        // User tapped Cancel / dismissed the share sheet - this is normal behavior
+        if (err?.name === 'AbortError') {
+          return true;
+        }
+        console.warn('Native share failed, falling back to download:', err);
+      }
     }
+
+    // Fallback: direct download if share is unavailable or failed
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    return true;
   } catch (error) {
-    console.error('Error sharing PDF file:', error);
+    console.error('Error in sharePdfFile:', error);
     return false;
   }
 }

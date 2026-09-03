@@ -36,7 +36,7 @@ export const translations = {
     viewAll: 'عرض الكل',
     noTransactionsYet: 'لا توجد حركات مسجلة حتى الآن',
     viewReceipt: 'عرض السند',
-    sharePdf: 'مشاركة PDF',
+    sharePdf: 'مشاركة كملف PDF',
 
     // Parties Directory
     partiesTitle: 'سجل العملاء والموردين',
@@ -165,7 +165,9 @@ export const translations = {
     // PDF & Invoicing
     invoiceHeaderTitle: 'فاتورة ضريبية / سند قيد',
     statementHeaderTitle: 'كشف حساب مالي تفصيلي',
-    downloadPdf: 'تحميل كشف الحساب (PDF)',
+    downloadPdf: 'تحميل (PDF)',
+    shareWhatsAppText: 'واتساب (نص)',
+    generatingPdf: 'جاري تجهيز PDF...',
     printDocument: 'طباعة الفاتورة',
     close: 'إغلاق',
     billTo: 'المطلوب من السيد / السادة',
@@ -225,7 +227,7 @@ export const translations = {
     viewAll: 'View All',
     noTransactionsYet: 'No transactions recorded yet',
     viewReceipt: 'View Receipt',
-    sharePdf: 'Share PDF',
+    sharePdf: 'Share as PDF File',
 
     // Parties Directory
     partiesTitle: 'Customers & Distributors Directory',
@@ -354,7 +356,9 @@ export const translations = {
     // PDF & Invoicing
     invoiceHeaderTitle: 'Tax Invoice / Ledger Entry',
     statementHeaderTitle: 'Detailed Financial Statement',
-    downloadPdf: 'Download Statement (PDF)',
+    downloadPdf: 'Download (PDF)',
+    shareWhatsAppText: 'WhatsApp (Text)',
+    generatingPdf: 'Generating PDF...',
     printDocument: 'Print Invoice',
     close: 'Close',
     billTo: 'Billed To',

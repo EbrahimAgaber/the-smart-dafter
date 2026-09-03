@@ -96,6 +96,12 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     setIsGenerating(false);
   };
 
+  const handleSharePdf = async () => {
+    setIsGenerating(true);
+    await sharePdfFile('invoice-render-target', pdfFileName, `${docTitle} - #${transaction.receiptNumber}`);
+    setIsGenerating(false);
+  };
+
   const handleWhatsAppShare = () => {
     const cleanPhone = sanitizePhoneNumber(party.phone);
     const msg = buildWhatsAppMessage(party, transaction, profile, lang);
@@ -178,20 +184,23 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                 speakText(textToSpeak, isRtl ? 'ar' : 'en');
               }}
               title={isRtl ? 'استمع للسند صوتيًا' : 'Listen out loud'}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold border border-amber-200 transition-colors shadow-2xs"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold border border-amber-200 transition-colors shadow-2xs"
             >
               <Volume2 className="w-3.5 h-3.5 text-amber-700" />
-              <span className="hidden sm:inline">{isRtl ? 'استمع' : 'Listen'}</span>
+              <span className="hidden md:inline">{isRtl ? 'استمع' : 'Listen'}</span>
             </button>
 
-            {/* WhatsApp Share */}
+            {/* Share PDF File (iOS Share Sheet / Native Web Share) */}
             <button
-              onClick={handleWhatsAppShare}
-              title={t.shareWhatsApp}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-colors shadow-2xs"
+              onClick={handleSharePdf}
+              disabled={isGenerating}
+              title={t.sharePdf}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-2xs"
             >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">WhatsApp</span>
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {isGenerating ? t.generatingPdf : t.sharePdf}
+              </span>
             </button>
 
             {/* Download PDF */}
@@ -199,12 +208,10 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
               onClick={handleDownloadPdf}
               disabled={isGenerating}
               title={t.downloadPdf}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              className="flex items-center gap-1 px-2 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300/60 shadow-2xs transition-colors"
             >
               <Download className="w-3.5 h-3.5 text-sky-600" />
-              <span className="hidden sm:inline">
-                {isGenerating ? (isRtl ? 'جاري التحميل...' : 'Generating...') : 'PDF'}
-              </span>
+              <span className="hidden md:inline">PDF</span>
             </button>
 
             {/* Print */}
@@ -470,21 +477,34 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
         </div>
 
         {/* Bottom Fast Action Bar */}
-        <div className="border-t border-slate-200 pt-3 flex items-center justify-between text-xs shrink-0">
-          <button
-            onClick={handleCopyText}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-750 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>{copied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'نسخ نص السند' : 'Copy Text')}</span>
-          </button>
+        <div className="border-t border-slate-200 pt-3 flex items-center justify-between gap-2 text-xs shrink-0 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleCopyText}
+              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              title={isRtl ? 'نسخ نص السند للحافظة' : 'Copy text to clipboard'}
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{copied ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'نسخ النص' : 'Copy Text')}</span>
+            </button>
+
+            <button
+              onClick={handleWhatsAppShare}
+              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              title={isRtl ? 'إرسال ملخص نصي عبر واتساب' : 'Send quick text via WhatsApp'}
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{t.shareWhatsAppText}</span>
+            </button>
+          </div>
 
           <button
-            onClick={handleWhatsAppShare}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-600 hover:from-cyan-500 hover:to-teal-500 text-white font-bold shadow-md shadow-cyan-950/30 transition-all active:scale-98 border border-cyan-400/20"
+            onClick={handleSharePdf}
+            disabled={isGenerating}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/20 transition-all border border-emerald-400/30 disabled:opacity-75"
           >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'إرسال السند عبر واتساب' : 'Send via WhatsApp'}</span>
+            <Share2 className="w-4 h-4" />
+            <span>{isGenerating ? t.generatingPdf : t.sharePdf}</span>
           </button>
         </div>
       </motion.div>

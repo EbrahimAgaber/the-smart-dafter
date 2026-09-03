@@ -71,6 +71,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [importStatus, setImportStatus] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [devTapCount, setDevTapCount] = useState(0);
+
+  const handleVersionTap = () => {
+    const next = devTapCount + 1;
+    if (next >= 5) {
+      setDevTapCount(0);
+      onOpenKeyGenerator?.();
+    } else {
+      setDevTapCount(next);
+      setTimeout(() => setDevTapCount(0), 3000);
+    }
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const backupFileInputRef = useRef<HTMLInputElement>(null);
@@ -473,52 +485,59 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </button>
       </div>
 
+      {/* Store Setup & Onboarding Wizard */}
+      {onOpenStoreSetup && (
+        <div
+          id="settings-store-setup-card"
+          className="p-4 bg-white rounded-3xl border border-slate-200 space-y-3 shadow-2xs"
+        >
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+            <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
+              <Store className="w-4 h-4 text-cyan-600" />
+              <span>{isRtl ? 'معالج تهيئة وتخصيص المتجر' : 'Store Setup & Configuration'}</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {isRtl
+              ? 'يمكنك إعادة تشغيل معالج التهيئة لتغيير اسم المتجر، المالك، العملة، أو تفريغ البيانات للبدء من جديد.'
+              : 'Re-run the store onboarding wizard to reconfigure business profile, currency, or start with fresh data.'}
+          </p>
+
+          <button
+            type="button"
+            onClick={onOpenStoreSetup}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-300/60 transition-all shadow-2xs"
+          >
+            <Store className="w-3.5 h-3.5 text-cyan-600" />
+            <span>{isRtl ? 'تشغيل معالج تهيئة المتجر' : 'Launch Store Setup Wizard'}</span>
+          </button>
+        </div>
+      )}
+
       {/* License & Security Guard Status Card */}
       {(() => {
         const licStatus = getLicenseStatus();
         return (
           <div
             id="settings-license-card"
-            className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-sm"
+            className="p-4 bg-white rounded-3xl border border-slate-200 space-y-3 shadow-2xs"
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`p-2 rounded-xl border ${
-                    licStatus.isActive
-                      ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                      : 'bg-rose-50 text-rose-600 border-rose-200'
-                  }`}
-                >
-                  {licStatus.isActive ? (
-                    <ShieldCheck className="w-5 h-5" />
-                  ) : (
-                    <ShieldAlert className="w-5 h-5" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900">
-                    {isRtl ? 'حالة ترخيص البرنامج' : 'License & Protection Status'}
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    {licStatus.isLifetime
-                      ? (isRtl ? 'رخصة دائمة مدى الحياة' : 'Perpetual Lifetime License')
-                      : licStatus.isActive
-                      ? (isRtl ? `صالح حتى: ${licStatus.expiryDateStr}` : `Valid until: ${licStatus.expiryDateStr}`)
-                      : (isRtl ? 'الرخصة منتهية - يرجى التجديد' : 'License expired - please renew')}
-                  </p>
-                </div>
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>{isRtl ? 'حالة ترخيص البرنامج' : 'License & Protection Status'}</span>
               </div>
 
               <span
                 className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border shadow-2xs ${
                   licStatus.isActive
-                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                    : 'bg-rose-100 text-rose-800 border-rose-300'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
                 }`}
               >
                 {licStatus.isLifetime
-                  ? (isRtl ? 'دائم' : 'Lifetime')
+                  ? (isRtl ? 'رخصة دائمة' : 'Lifetime')
                   : licStatus.isExpired
                   ? (isRtl ? 'منتهية' : 'Expired')
                   : isRtl
@@ -527,68 +546,85 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </span>
             </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              {onOpenSecurityGuard && (
-                <button
-                  type="button"
-                  onClick={onOpenSecurityGuard}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:scale-98 text-white text-xs font-bold transition-all shadow-sm shadow-cyan-950/20"
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>{isRtl ? 'إدارة وتفعيل الرخصة' : 'Manage / Activate License'}</span>
-                </button>
-              )}
-
-              {onOpenKeyGenerator && (
-                <button
-                  type="button"
-                  onClick={onOpenKeyGenerator}
-                  title={isRtl ? 'مولد المفاتيح للمطور والمالك' : 'Master Key Generator (Owner)'}
-                  className="flex items-center justify-center gap-1 py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold border border-purple-200 transition-all shadow-2xs"
-                >
-                  <span>🔐 {isRtl ? 'المولد' : 'KeyGen'}</span>
-                </button>
-              )}
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border ${
+                  licStatus.isActive
+                    ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                    : 'bg-rose-50 text-rose-600 border-rose-200'
+                }`}
+              >
+                {licStatus.isActive ? (
+                  <ShieldCheck className="w-5 h-5" />
+                ) : (
+                  <ShieldAlert className="w-5 h-5" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-xs font-bold text-slate-900">
+                  {isRtl ? licStatus.planNameAr : licStatus.planNameEn}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {licStatus.isLifetime
+                    ? (isRtl ? 'رخصة دائمة ومفتوحة بدون انتهاء' : 'Perpetual Lifetime License')
+                    : licStatus.isActive
+                    ? (isRtl ? `صالح للاستخدام حتى: ${licStatus.expiryDateStr}` : `Active until: ${licStatus.expiryDateStr}`)
+                    : (isRtl ? 'الرخصة منتهية - يرجى إدخال مفتاح تفعيل' : 'License expired - please renew')}
+                </p>
+              </div>
             </div>
+
+            {onOpenSecurityGuard && (
+              <button
+                type="button"
+                onClick={onOpenSecurityGuard}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 active:scale-98 text-white text-xs font-bold transition-all shadow-md shadow-cyan-950/20"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'إدارة وتفعيل مفتاح الرخصة' : 'Activate / Manage License'}</span>
+              </button>
+            )}
           </div>
         );
       })()}
 
-      {/* Beta Release & Distribution Card */}
+      {/* About Application & Sharing Card */}
       <div
-        id="beta-release-card"
-        className="bg-gradient-to-br from-slate-900 to-slate-950 rounded-2xl border border-sky-500/30 p-4 space-y-3 shadow-md"
+        id="settings-about-card"
+        className="p-4 bg-white rounded-3xl border border-slate-200 space-y-3 shadow-2xs"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-sky-500/20 text-sky-600 border border-sky-500/30">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                <span>{isRtl ? 'إصدار التجربة الميدانية' : 'Field Beta Release'}</span>
-                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-sky-500 text-slate-950">
-                  v1.0-BETA
-                </span>
-              </h3>
-              <p className="text-xs text-slate-400">
-                {isRtl
-                  ? 'جاهز للاختبار الميداني ومشاركة الرابط مع العملاء وفريق العمل'
-                  : 'Ready for merchant testing and team sharing'}
-              </p>
-            </div>
+        <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+          <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
+            <Sparkles className="w-4 h-4 text-sky-600" />
+            <span>{isRtl ? 'عن التطبيق والمشاركة' : 'About & Sharing'}</span>
           </div>
+
+          {/* Version badge with hidden 5-tap developer trigger */}
+          <button
+            type="button"
+            onClick={handleVersionTap}
+            className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 transition-colors"
+            title={devTapCount > 0 ? `${5 - devTapCount} taps remaining` : 'v2.0 Production'}
+          >
+            v2.0 Production
+          </button>
         </div>
+
+        <p className="text-xs text-slate-500 leading-relaxed">
+          {isRtl
+            ? 'الدفتر الذكي - نظام محاسبي محلي لإدارة ديون العملاء والموردين والفواتير وسندات القبض ونقاط البيع السريعة.'
+            : 'Daftar Smart - Local-first mobile ledger for tracking credit, invoices, receipts, and POS.'}
+        </p>
 
         <div className="flex items-center gap-2 pt-1">
           <button
-            id="btn-share-beta-link"
+            id="btn-share-app-link"
             type="button"
             onClick={handleShareBeta}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md"
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-500 hover:to-cyan-500 active:scale-98 text-white text-xs font-bold transition-all shadow-md shadow-sky-950/20"
           >
             <Share2 className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'مشاركة الرابط' : 'Share Link'}</span>
+            <span>{isRtl ? 'مشاركة رابط التطبيق' : 'Share App Link'}</span>
           </button>
 
           {onOpenPhonePairing && (
@@ -596,19 +632,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               id="btn-settings-qr-pairing"
               type="button"
               onClick={onOpenPhonePairing}
-              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-sky-300 text-xs font-semibold border border-slate-300 transition-all"
+              className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300/60 transition-all shadow-2xs"
               title={isRtl ? 'مسح رمز QR للجوال' : 'Scan Phone QR'}
             >
-              <QrCode className="w-3.5 h-3.5 text-sky-600" />
-              <span>{isRtl ? 'رمز QR للجوال' : 'Phone QR'}</span>
+              <QrCode className="w-3.5 h-3.5 text-cyan-600" />
+              <span className="hidden sm:inline">{isRtl ? 'رمز للجوال' : 'Phone QR'}</span>
             </button>
           )}
 
           <button
-            id="btn-copy-beta-link"
+            id="btn-copy-app-link"
             type="button"
             onClick={handleShareBeta}
-            className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300 transition-all"
+            className="flex items-center justify-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300/60 transition-all shadow-2xs"
             title={isRtl ? 'نسخ الرابط' : 'Copy link'}
           >
             {copiedLink ? (
@@ -616,20 +652,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             ) : (
               <Copy className="w-3.5 h-3.5 text-slate-700" />
             )}
-            <span className="text-xs">{copiedLink ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'نسخ' : 'Copy')}</span>
+            <span>{copiedLink ? (isRtl ? 'تم النسخ!' : 'Copied!') : (isRtl ? 'نسخ' : 'Copy')}</span>
           </button>
         </div>
-
-        {onOpenStoreSetup && (
-          <button
-            type="button"
-            onClick={onOpenStoreSetup}
-            className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-green-700 border border-cyan-500/30 text-xs font-bold transition-all"
-          >
-            <Store className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'معالج إعداد المتجر للاستخدام الحقيقي' : 'Real Store Setup Wizard'}</span>
-          </button>
-        )}
       </div>
     </div>
   );

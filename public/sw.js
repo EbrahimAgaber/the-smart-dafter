@@ -1,20 +1,28 @@
-// Daftar Smart Service Worker v2.0
-const CACHE_NAME = 'daftar-smart-v2';
+// Daftar Smart Service Worker v2.1
+const CACHE_NAME = 'daftar-smart-v2.1';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon.svg',
-  '/favicon.png',
-  '/pwa-192x192.png',
-  '/pwa-512x512.png',
-  '/apple-touch-icon.png'
+  './',
+  './index.html',
+  './manifest.json',
+  './icon.svg',
+  './favicon.png',
+  './pwa-192x192.png',
+  './pwa-512x512.png',
+  './app-icon.jpg',
+  './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_NAME).then(async (cache) => {
+      // Add assets individually with catch so one failing asset does not abort install
+      for (const asset of STATIC_ASSETS) {
+        try {
+          await cache.add(asset);
+        } catch (e) {
+          // ignore optional missing assets
+        }
+      }
     })
   );
   self.skipWaiting();
@@ -43,11 +51,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Navigation requests: Network First, fallback to cache
+  // Navigation requests: Network First, fallback to cached index.html
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return caches.match('/index.html') || caches.match('/');
+        return caches.match('./index.html') || caches.match('./') || caches.match(event.request);
       })
     );
     return;
