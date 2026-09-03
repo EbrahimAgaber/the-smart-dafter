@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Smartphone, Monitor, Globe, QrCode, Wifi, Battery, Signal } from 'lucide-react';
+import React, { useState } from 'react';
+import { Smartphone, Monitor, Globe, QrCode } from 'lucide-react';
 import { Language } from '../types';
 
 interface MobileFrameProps {
@@ -16,29 +16,12 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
   onOpenPhonePairing,
 }) => {
   const [isMobileChassis, setIsMobileChassis] = useState(true);
-  const [currentTime, setCurrentTime] = useState('09:41');
-
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      setCurrentTime(
-        now.toLocaleTimeString(lang === 'ar' ? 'ar-SA' : 'en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        })
-      );
-    };
-    updateTime();
-    const timer = setInterval(updateTime, 10000);
-    return () => clearInterval(timer);
-  }, [lang]);
 
   return (
     <div
       id="app-mobile-root"
       dir={lang === 'ar' ? 'rtl' : 'ltr'}
-      className="min-h-screen bg-slate-100 text-slate-900 flex flex-col items-center justify-start p-0 md:p-6 select-none overflow-x-hidden"
+      className="min-h-screen min-h-[100dvh] bg-[#F8FAFC] md:bg-slate-100 text-slate-900 flex flex-col items-center justify-start p-0 md:p-6 select-none overflow-x-hidden"
       style={{
         fontFamily: lang === 'ar' ? 'var(--font-cairo), system-ui' : 'var(--font-inter), system-ui',
       }}
@@ -99,45 +82,19 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
         </div>
       </header>
 
-      {/* Main Container: Either iPhone/Android Mobile Chassis or Full Responsive View */}
+      {/* Main Container: Native full-screen on mobile, chassis or expanded view on desktop */}
       <main
         id="phone-wrapper"
         className={`w-full transition-all duration-300 relative flex flex-col bg-[#F8FAFC] shadow-2xl print:max-w-none print:h-auto print:min-h-0 print:border-none print:shadow-none print:rounded-none print:bg-white print:m-0 print:p-0 ${
           isMobileChassis
-            ? 'max-w-[440px] md:min-h-[860px] md:h-[92vh] md:rounded-[48px] md:border-[12px] md:border-black md:ring-1 md:ring-slate-300 overflow-hidden shadow-slate-300/50'
-            : 'max-w-3xl min-h-screen md:rounded-3xl md:border md:border-slate-200 overflow-hidden shadow-slate-200/50'
+            ? 'h-[100dvh] md:h-[92vh] md:min-h-[860px] max-w-full md:max-w-[440px] md:rounded-[48px] md:border-[12px] md:border-black md:ring-1 md:ring-slate-300 overflow-hidden shadow-slate-300/50'
+            : 'h-[100dvh] md:min-h-screen md:h-auto max-w-full md:max-w-3xl md:rounded-3xl md:border md:border-slate-200 overflow-hidden shadow-slate-200/50'
         }`}
       >
-        {/* Status Bar for Mobile Feel */}
-        <div
-          id="mobile-status-bar"
-          className="no-print w-full bg-[#F8FAFC]/95 backdrop-blur z-30 px-6 pt-3 pb-2 flex items-center justify-between text-xs font-semibold text-slate-800"
-        >
-          <span className="tracking-wider w-12 text-center">{currentTime}</span>
-
-          {/* Dynamic Island / Speaker Pill (in chassis mode) */}
-          {isMobileChassis && (
-            <div
-              id="dynamic-island"
-              className="hidden md:flex items-center justify-center h-7 w-28 bg-black rounded-full border border-black px-2 shadow-sm"
-            >
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-800 me-3" />
-              <div className="w-2.5 h-2.5 rounded-full bg-cyan-500/80 blur-[1px]" />
-            </div>
-          )}
-
-          {/* Mobile status icons: Network, Wifi, Battery */}
-          <div className="flex items-center gap-1.5 text-slate-800 justify-end w-16">
-            <Signal className="w-3.5 h-3.5" />
-            <Wifi className="w-3.5 h-3.5" />
-            <Battery className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Mobile View Content Area */}
+        {/* Mobile View Content Area with Safe Area Insets for iOS Notch / Dynamic Island / Home Bar */}
         <div
           id="mobile-content-area"
-          className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative pb-20 print:pb-0 scroll-smooth bg-[#F8FAFC] print:bg-white"
+          className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden relative pt-[env(safe-area-inset-top,0.5rem)] md:pt-2 pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))] print:pt-0 print:pb-0 scroll-smooth bg-[#F8FAFC] print:bg-white"
         >
           {children}
         </div>
