@@ -75,7 +75,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && currentProfile.name) onClose();
       }}
       className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 overflow-y-auto"
     >
@@ -85,18 +85,18 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 32, scale: 0.98 }}
         transition={{ type: 'spring', damping: 28, stiffness: 340, mass: 0.8 }}
-        className="w-full max-w-md bg-slate-900 rounded-3xl border border-slate-800 p-5 md:p-6 space-y-5 shadow-2xl overflow-hidden"
+        className="w-full max-w-md bg-white rounded-3xl border border-slate-200 p-5 md:p-6 space-y-5 shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <div className="p-2 rounded-xl bg-cyan-500/10 text-green-600 border border-cyan-500/20">
               <Store className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-100 flex items-center gap-1.5">
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-1.5">
                 <span>{isRtl ? 'إعداد المتجر للاستخدام الحقيقي' : 'Real Store Setup Wizard'}</span>
-                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-cyan-500/20 text-green-700 border border-cyan-500/30">
                   {step === 1 ? '1/2' : '2/2'}
                 </span>
               </h2>
@@ -107,20 +107,22 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {currentProfile.name && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Step 1: Store & Owner Details */}
         {step === 1 && (
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-sky-400" />
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-sky-600" />
                 <span>{isRtl ? 'اسم المحل أو النشاط التجاري *' : 'Business / Store Name *'}</span>
               </label>
               <input
@@ -128,14 +130,14 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
                 placeholder={isRtl ? 'مثال: تموينات البركة / مؤسسة النور' : 'e.g., Al-Baraka Trading'}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-sky-400" />
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-sky-600" />
                   <span>{isRtl ? 'اسم المالك أو المسؤول' : 'Owner Name'}</span>
                 </label>
                 <input
@@ -143,13 +145,13 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                   value={ownerName}
                   onChange={(e) => setOwnerName(e.target.value)}
                   placeholder={isRtl ? 'مثال: أبو أحمد' : 'e.g. John Doe'}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                  <Phone className="w-3.5 h-3.5 text-emerald-400" />
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <Phone className="w-3.5 h-3.5 text-green-600" />
                   <span>{isRtl ? 'رقم الواتساب / الجوال *' : 'WhatsApp / Mobile *'}</span>
                 </label>
                 <input
@@ -157,14 +159,14 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="05xxxxxxxx"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors font-mono"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center gap-1.5">
-                <Coins className="w-3.5 h-3.5 text-amber-400" />
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Coins className="w-3.5 h-3.5 text-amber-600" />
                 <span>{isRtl ? 'العملة الأساسية للمعاملات' : 'Default Currency'}</span>
               </label>
               <div className="grid grid-cols-2 gap-2">
@@ -176,7 +178,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                     className={`py-2 px-3 rounded-xl text-xs font-bold text-start border transition-all flex items-center justify-between ${
                       currency === c.code
                         ? 'bg-sky-500/20 text-sky-300 border-sky-500 shadow-xs'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-700'
+                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
                     }`}
                   >
                     <span>{isRtl ? c.labelAr : c.labelEn}</span>
@@ -201,7 +203,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
         {step === 2 && (
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 {isRtl ? 'الرقم الضريبي أو السجل التجاري (اختياري)' : 'Tax ID / CR Number (Optional)'}
               </label>
               <input
@@ -209,12 +211,12 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                 value={taxNumber}
                 onChange={(e) => setTaxNumber(e.target.value)}
                 placeholder="300000000000003"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors font-mono"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-300 mb-1.5">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
                 {isRtl ? 'عنوان المحل أو المدينة (اختياري)' : 'Store Address or City (Optional)'}
               </label>
               <input
@@ -222,74 +224,17 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder={isRtl ? 'الرياض - حي الملز' : 'Riyadh, Saudi Arabia'}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors"
               />
             </div>
 
-            {/* Mode selection: Clean vs Demo */}
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              <label className="block text-xs font-bold text-slate-200">
-                {isRtl ? 'حالة البيانات عند بدء التطبيق:' : 'Initial Data State:'}
-              </label>
 
-              <div
-                onClick={() => setFreshStart(true)}
-                className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                  freshStart
-                    ? 'bg-emerald-500/10 border-emerald-500/50'
-                    : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="p-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 mt-0.5">
-                  <Trash2 className="w-4 h-4" />
-                </div>
-                <div className="flex-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-100">
-                      {isRtl ? 'بدء دفتر فارغ ونظيف (مستحسن للعمل الحقيقي)' : 'Fresh Empty Ledger (Recommended for real use)'}
-                    </span>
-                    {freshStart && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {isRtl
-                      ? 'مسح العملاء والفواتير الوهمية والبدء بإضافة عملاءك ومنتجاتك الحقيقية'
-                      : 'Wipe mock data and start recording your real customers & products'}
-                  </p>
-                </div>
-              </div>
-
-              <div
-                onClick={() => setFreshStart(false)}
-                className={`p-3 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
-                  !freshStart
-                    ? 'bg-sky-500/10 border-sky-500/50'
-                    : 'bg-slate-950 border-slate-800 hover:border-slate-700'
-                }`}
-              >
-                <div className="p-1.5 rounded-xl bg-sky-500/20 text-sky-400 mt-0.5">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <div className="flex-1 text-xs">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-100">
-                      {isRtl ? 'الاحتفاظ بالبيانات التجريبية' : 'Keep Sample Demo Data'}
-                    </span>
-                    {!freshStart && <CheckCircle2 className="w-4 h-4 text-sky-400" />}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    {isRtl
-                      ? 'إبقاء أمثلة العملاء والفواتير الحالية لتجربة الأزرار فقط'
-                      : 'Keep existing sample customers and transactions to explore UI'}
-                  </p>
-                </div>
-              </div>
-            </div>
 
             <div className="flex items-center gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition-colors"
+                className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300 transition-colors"
               >
                 {isRtl ? 'السابق' : 'Back'}
               </button>
@@ -297,7 +242,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
               <button
                 type="button"
                 onClick={handleFinish}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md"
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md"
               >
                 <FileCheck2 className="w-4 h-4" />
                 <span>{isRtl ? 'حفظ والبدء في المتجر' : 'Save & Launch Store'}</span>

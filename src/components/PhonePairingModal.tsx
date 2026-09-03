@@ -27,12 +27,10 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
 }) => {
   const isRtl = lang === 'ar';
 
-  // URLs
-  const devUrl = 'https://ais-dev-nwq7exa3je54pddclvil7b-547806900389.europe-west2.run.app';
-  const sharedUrl = 'https://ais-pre-nwq7exa3je54pddclvil7b-547806900389.europe-west2.run.app';
-
-  const [selectedUrlType, setSelectedUrlType] = useState<'shared' | 'dev'>('shared');
-  const activeUrl = selectedUrlType === 'shared' ? sharedUrl : devUrl;
+  // Dynamic host origin (works on any deployed domain or local dev server)
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173';
+  const [customHost, setCustomHost] = useState(currentOrigin);
+  const activeUrl = customHost || currentOrigin;
 
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
@@ -79,16 +77,16 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 32, scale: 0.98 }}
         transition={{ type: 'spring', damping: 28, stiffness: 340, mass: 0.8 }}
-        className="w-full max-w-lg bg-slate-900 rounded-3xl border border-slate-800 p-5 md:p-6 space-y-5 shadow-2xl overflow-hidden"
+        className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 p-5 md:p-6 space-y-5 shadow-2xl overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-sky-500/10 text-sky-400 border border-sky-500/20">
+            <div className="p-2 rounded-xl bg-sky-50 text-sky-600 border border-sky-200">
               <Smartphone className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-100">
+              <h2 className="text-base font-bold text-slate-900">
                 {isRtl ? 'تجربة التطبيق على هاتفك المحمول' : 'Test App on Your Mobile Phone'}
               </h2>
               <p className="text-xs text-slate-400">
@@ -100,43 +98,15 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-slate-100 transition-colors"
+            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* URL Type Switcher */}
-        <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-2xl border border-slate-800">
-          <button
-            type="button"
-            onClick={() => setSelectedUrlType('shared')}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              selectedUrlType === 'shared'
-                ? 'bg-sky-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'الرابط العام (مستحسن)' : 'Public Shared URL'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedUrlType('dev')}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
-              selectedUrlType === 'dev'
-                ? 'bg-emerald-500 text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'رابط المطورين (حساب Google)' : 'Dev URL (Google)'}</span>
-          </button>
-        </div>
-
         {/* QR Code Card */}
-        <div className="flex flex-col items-center justify-center bg-slate-950 p-5 rounded-2xl border border-slate-800 space-y-3">
-          <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-slate-800 flex items-center justify-center">
+        <div className="flex flex-col items-center justify-center bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
+          <div className="p-3 bg-white rounded-2xl shadow-xl border-4 border-slate-200 flex items-center justify-center">
             {qrCodeDataUrl ? (
               <img
                 src={qrCodeDataUrl}
@@ -151,62 +121,46 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
           </div>
 
           <div className="text-center space-y-1 max-w-sm">
-            <p className="text-xs font-bold text-slate-200">
+            <p className="text-xs font-bold text-slate-800">
               {isRtl
                 ? '1. افتح تطبيق الكاميرا على هاتفك (iPhone أو Android)'
                 : '1. Open the camera app on your phone (iPhone or Android)'}
             </p>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-xs text-slate-400">
               {isRtl
-                ? '2. وجه الكاميرا نحو الرمز واضغط على الرابط الأصفر الذي يظهر للشاشة'
+                ? '2. وجه الكاميرا نحو الرمز واضغط على الرابط الذي يظهر للشاشة'
                 : '2. Point camera at the QR code and tap the link notification banner'}
             </p>
           </div>
         </div>
 
-        {/* Why did page not found happen? Notice */}
-        {selectedUrlType === 'shared' ? (
-          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-            <div className="text-[11px] leading-relaxed text-amber-200/90 space-y-1">
-              <span className="font-bold text-amber-300 block">
-                {isRtl ? 'هام: لتفعيل الرابط بدون رسالة "Page not found"' : 'Important: To avoid "Page not found"'}
-              </span>
-              <span>
-                {isRtl
-                  ? 'اضغط على زر "Share" (مشاركة) في الزاوية العلوية اليمنى في AI Studio واضغط Publish مرة واحدة لتفعيل الرابط العام لجميع الهواتف.'
-                  : 'Click the "Share" button at the top-right of AI Studio and tap Publish once to activate the shared preview for any device.'}
-              </span>
-            </div>
+        {/* Guidance Alert */}
+        <div className="p-3 rounded-2xl bg-sky-50 border border-sky-200 flex items-start gap-2.5 text-xs text-sky-800">
+          <AlertCircle className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold block text-sky-900 mb-0.5">
+              {isRtl ? 'بيئة العمل دون اتصال (Offline-first)' : 'Offline PWA Ready'}
+            </span>
+            <p className="text-sky-700 leading-relaxed">
+              {isRtl
+                ? 'بمجرد فتح التطبيق على الجوال، اضغط "إضافة للشاشة الرئيسية" لتثبيته واستخدامه حتى بدون إنترنت.'
+                : 'Once opened on your phone, tap "Add to Home Screen" to install and operate offline.'}
+            </p>
           </div>
-        ) : (
-          <div className="p-3 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-            <div className="text-[11px] leading-relaxed text-sky-200/90 space-y-1">
-              <span className="font-bold text-sky-300 block">
-                {isRtl ? 'ملاحظة رابط المطور' : 'Developer URL Notice'}
-              </span>
-              <span>
-                {isRtl
-                  ? 'يعمل مباشرة بشرط أن يكون متصفح الهاتف مسجلاً بنفس بريد حساب Google الخاص بك (gaberibra48@gmail.com).'
-                  : 'Works directly if your mobile browser is logged in to your Google account (gaberibra48@gmail.com).'}
-              </span>
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Link Copier & Actions */}
         <div className="space-y-2">
-          <div className="flex items-center gap-2 p-2 bg-slate-950 rounded-xl border border-slate-800 text-xs font-mono text-slate-300 overflow-hidden">
+          <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 overflow-hidden">
             <span className="truncate flex-1 px-2 select-all">{activeUrl}</span>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold shrink-0 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold shrink-0 transition-colors"
             >
               {copied ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">{isRtl ? 'تم النسخ!' : 'Copied!'}</span>
+                  <Check className="w-3.5 h-3.5 text-green-600" />
+                  <span className="text-green-600">{isRtl ? 'تم النسخ!' : 'Copied!'}</span>
                 </>
               ) : (
                 <>
@@ -222,7 +176,7 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
               href={activeUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all border border-slate-700"
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all border border-slate-300"
             >
               <ExternalLink className="w-3.5 h-3.5" />
               <span>{isRtl ? 'فتح في علامة تبويب جديدة' : 'Open in New Tab'}</span>

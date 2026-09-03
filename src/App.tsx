@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Suspense, lazy } from 'react';
 import { AnimatePresence } from 'motion/react';
 import {
   ActiveTab,
@@ -21,11 +21,28 @@ import { ProductsCatalogModal } from './components/ProductsCatalogModal';
 import { SettingsView } from './components/SettingsView';
 import { InvoiceCreatorModal } from './components/InvoiceCreatorModal';
 import { PaymentReceiptModal } from './components/PaymentReceiptModal';
-import { InvoicePdfModal } from './components/InvoicePdfModal';
-import { StatementPdfModal } from './components/StatementPdfModal';
-import { PhonePairingModal } from './components/PhonePairingModal';
-import { StoreSetupWizardModal } from './components/StoreSetupWizardModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
+
+// Lazy-loaded modals to shrink initial bundle and isolate heavy PDF / QR dependencies
+const InvoicePdfModal = lazy(() =>
+  import('./components/InvoicePdfModal').then((m) => ({ default: m.InvoicePdfModal }))
+);
+const StatementPdfModal = lazy(() =>
+  import('./components/StatementPdfModal').then((m) => ({ default: m.StatementPdfModal }))
+);
+const PhonePairingModal = lazy(() =>
+  import('./components/PhonePairingModal').then((m) => ({ default: m.PhonePairingModal }))
+);
+const StoreSetupWizardModal = lazy(() =>
+  import('./components/StoreSetupWizardModal').then((m) => ({ default: m.StoreSetupWizardModal }))
+);
+const SecurityGuardModal = lazy(() =>
+  import('./components/SecurityGuardModal').then((m) => ({ default: m.SecurityGuardModal }))
+);
+const AdminKeyGeneratorModal = lazy(() =>
+  import('./components/AdminKeyGeneratorModal').then((m) => ({ default: m.AdminKeyGeneratorModal }))
+);
+import { checkCanCreateInvoice } from './utils/licenseManager';
 
 type ModalType =
   | null
@@ -36,7 +53,9 @@ type ModalType =
   | 'invoice-pdf'
   | 'statement-pdf'
   | 'phone-pairing'
-  | 'store-setup';
+  | 'store-setup'
+  | 'security-guard'
+  | 'admin-keygen';
 
 export default function App() {
   const store = useMemo(() => SQLiteLedgerStore.getInstance(), []);
@@ -67,6 +86,13 @@ export default function App() {
     localStorage.setItem('daftar_smart_lang', lang);
   }, [lang]);
 
+  // Prompt setup wizard if fresh start
+  useEffect(() => {
+    if (!profile.name) {
+      setActiveModal('store-setup');
+    }
+  }, [profile.name]);
+
   // Refresh local state from store
   const refreshStoreData = useCallback(() => {
     setParties(store.getParties());
@@ -88,6 +114,10 @@ export default function App() {
     partyId: string;
     type: TransactionType;
     items: LineItem[];
+    subtotalBeforeTax?: number;
+    discountAmount?: number;
+    taxRate?: number;
+    taxAmount?: number;
     totalAmount: number;
     paidAmount: number;
     remainingBalanceDelta: number;
@@ -105,6 +135,31 @@ export default function App() {
       setModalParty(party);
       setActiveModal('invoice-pdf');
     }
+  };
+
+  // Transaction void handler
+  const handleVoidTransaction = (txId: string) => {
+    store.voidTransaction(txId);
+    refreshStoreData();
+  };
+
+  // Gatekeepers for Invoice Creation via Security Guard
+  const handleOpenSaleModal = (party?: Party | null) => {
+    if (!checkCanCreateInvoice()) {
+      setActiveModal('security-guard');
+      return;
+    }
+    setModalParty(party || null);
+    setActiveModal('invoice-sale');
+  };
+
+  const handleOpenSupplyModal = (party?: Party | null) => {
+    if (!checkCanCreateInvoice()) {
+      setActiveModal('security-guard');
+      return;
+    }
+    setModalParty(party || null);
+    setActiveModal('invoice-supply');
   };
 
   // Payment receipt submission handler
@@ -251,12 +306,11 @@ export default function App() {
             );
           }}
           onOpenNewSale={() => {
-            setModalParty(selectedPartyForLedger);
-            setActiveModal(
-              selectedPartyForLedger.type === 'CUSTOMER'
-                ? 'invoice-sale'
-                : 'invoice-supply'
-            );
+            if (selectedPartyForLedger.type === 'CUSTOMER') {
+              handleOpenSaleModal(selectedPartyForLedger);
+            } else {
+              handleOpenSupplyModal(selectedPartyForLedger);
+            }
           }}
           onOpenStatementPdf={() => {
             setActiveModal('statement-pdf');
@@ -266,6 +320,7 @@ export default function App() {
             setModalParty(selectedPartyForLedger);
             setActiveModal('invoice-pdf');
           }}
+          onVoidTransaction={handleVoidTransaction}
         />
       ) : activeTab === 'dashboard' ? (
         <DashboardView
@@ -274,18 +329,12 @@ export default function App() {
           recentTransactions={transactions}
           profile={profile}
           lang={lang}
-          onOpenNewSale={() => {
-            setModalParty(null);
-            setActiveModal('invoice-sale');
-          }}
+          onOpenNewSale={() => handleOpenSaleModal(null)}
           onOpenReceivePayment={() => {
             setModalParty(null);
             setActiveModal('receipt');
           }}
-          onOpenNewSupply={() => {
-            setModalParty(null);
-            setActiveModal('invoice-supply');
-          }}
+          onOpenNewSupply={() => handleOpenSupplyModal(null)}
           onOpenPayDistributor={() => {
             setModalParty(null);
             setActiveModal('voucher');
@@ -311,10 +360,11 @@ export default function App() {
             setActiveModal(party.type === 'CUSTOMER' ? 'receipt' : 'voucher');
           }}
           onOpenNewSaleForParty={(party) => {
-            setModalParty(party);
-            setActiveModal(
-              party.type === 'CUSTOMER' ? 'invoice-sale' : 'invoice-supply'
-            );
+            if (party.type === 'CUSTOMER') {
+              handleOpenSaleModal(party);
+            } else {
+              handleOpenSupplyModal(party);
+            }
           }}
           onAddParty={handleAddParty}
           onUpdateParty={handleUpdateParty}
@@ -340,6 +390,8 @@ export default function App() {
           onResetDemoData={handleResetDemoData}
           onOpenPhonePairing={() => setActiveModal('phone-pairing')}
           onOpenStoreSetup={() => setActiveModal('store-setup')}
+          onOpenSecurityGuard={() => setActiveModal('security-guard')}
+          onOpenKeyGenerator={() => setActiveModal('admin-keygen')}
         />
       )}
 
@@ -416,50 +468,83 @@ export default function App() {
 
         {/* Modal: Invoice & Receipt PDF Preview */}
         {activeModal === 'invoice-pdf' && activeTxForPdf && modalParty && (
-          <InvoicePdfModal
-            key="modal-invoice-pdf"
-            transaction={activeTxForPdf}
-            party={modalParty}
-            profile={profile}
-            lang={lang}
-            onClose={() => {
-              setActiveModal(null);
-              setActiveTxForPdf(null);
-            }}
-          />
+          <Suspense fallback={null}>
+            <InvoicePdfModal
+              key="modal-invoice-pdf"
+              transaction={activeTxForPdf}
+              party={modalParty}
+              profile={profile}
+              lang={lang}
+              onClose={() => {
+                setActiveModal(null);
+                setActiveTxForPdf(null);
+              }}
+              onVoidTransaction={handleVoidTransaction}
+            />
+          </Suspense>
         )}
 
         {/* Modal: Detailed Account Statement PDF */}
         {activeModal === 'statement-pdf' && selectedPartyForLedger && (
-          <StatementPdfModal
-            key="modal-statement-pdf"
-            party={selectedPartyForLedger}
-            transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
-            profile={profile}
-            lang={lang}
-            onClose={() => setActiveModal(null)}
-          />
+          <Suspense fallback={null}>
+            <StatementPdfModal
+              key="modal-statement-pdf"
+              party={selectedPartyForLedger}
+              transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
+              profile={profile}
+              lang={lang}
+              onClose={() => setActiveModal(null)}
+            />
+          </Suspense>
         )}
 
         {/* Modal: Test on Phone / Mobile QR Pairing */}
         {activeModal === 'phone-pairing' && (
-          <PhonePairingModal
-            key="modal-phone-pairing"
-            lang={lang}
-            onClose={() => setActiveModal(null)}
-            onOpenStoreSetup={() => setActiveModal('store-setup')}
-          />
+          <Suspense fallback={null}>
+            <PhonePairingModal
+              key="modal-phone-pairing"
+              lang={lang}
+              onClose={() => setActiveModal(null)}
+              onOpenStoreSetup={() => setActiveModal('store-setup')}
+            />
+          </Suspense>
         )}
 
         {/* Modal: Real Store Setup Wizard */}
         {activeModal === 'store-setup' && (
-          <StoreSetupWizardModal
-            key="modal-store-setup"
-            currentProfile={profile}
-            lang={lang}
-            onClose={() => setActiveModal(null)}
-            onSaveSetup={handleSaveStoreSetup}
-          />
+          <Suspense fallback={null}>
+            <StoreSetupWizardModal
+              key="modal-store-setup"
+              currentProfile={profile}
+              lang={lang}
+              onClose={() => setActiveModal(null)}
+              onSaveSetup={handleSaveStoreSetup}
+            />
+          </Suspense>
+        )}
+
+        {/* Modal: Security Guard Licensing & Activation */}
+        {activeModal === 'security-guard' && (
+          <Suspense fallback={null}>
+            <SecurityGuardModal
+              key="modal-security-guard"
+              profile={profile}
+              lang={lang}
+              onClose={() => setActiveModal(null)}
+              onLicenseUpdated={() => refreshStoreData()}
+            />
+          </Suspense>
+        )}
+
+        {/* Modal: Owner Master Key Generator */}
+        {activeModal === 'admin-keygen' && (
+          <Suspense fallback={null}>
+            <AdminKeyGeneratorModal
+              key="modal-admin-keygen"
+              lang={lang}
+              onClose={() => setActiveModal(null)}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
     </MobileFrame>

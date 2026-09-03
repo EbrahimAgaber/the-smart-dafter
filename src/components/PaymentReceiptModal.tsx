@@ -8,10 +8,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Building2,
+  Volume2,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, PaymentMethod, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency } from '../utils/formatters';
+import { playSuccessChime, speakText, getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PaymentReceiptModalProps {
   type: 'PAYMENT_RECEIVED' | 'PAYMENT_PAID';
@@ -78,6 +80,11 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
     setAmountInput((Math.round((currentOutstanding / 2) * 100) / 100).toString());
   };
 
+  const handleAddAmountIncrement = (inc: number) => {
+    const current = parseFloat(amountInput) || 0;
+    setAmountInput((current + inc).toString());
+  };
+
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError('');
@@ -91,6 +98,17 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
       setValidationError(isRtl ? 'يرجى إدخال مبلغ صحيح أكبر من صفر' : 'Please enter a valid amount greater than 0');
       return;
     }
+
+    // Audio chime & speech feedback
+    playSuccessChime();
+    speakText(
+      isRtl
+        ? isReceipt
+          ? `تم استلام دفعة بمبلغ ${parsedAmount} ريال من ${selectedParty?.name || 'العميل'}`
+          : `تم صرف دفعة بمبلغ ${parsedAmount} ريال للمورد ${selectedParty?.name || ''}`
+        : `Payment of ${parsedAmount} recorded for ${selectedParty?.name || 'party'}`,
+      isRtl ? 'ar' : 'en'
+    );
 
     onSubmit({
       partyId: selectedPartyId,
@@ -119,25 +137,25 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 48, scale: 0.98 }}
         transition={{ type: 'spring', damping: 28, stiffness: 340, mass: 0.8 }}
-        className="w-full max-w-md bg-slate-900 rounded-t-3xl md:rounded-3xl border border-slate-800 p-5 space-y-4 shadow-2xl"
+        className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <div className="flex items-center gap-2">
             <div
               className={`w-8 h-8 rounded-xl flex items-center justify-center ${
                 isReceipt
-                  ? 'bg-sky-950/70 text-sky-400 border border-sky-800/40'
-                  : 'bg-purple-950/70 text-purple-400 border border-purple-800/40'
+                  ? 'bg-sky-50/70 text-sky-600 border border-sky-200/40'
+                  : 'bg-purple-50/70 text-purple-600 border border-purple-200/40'
               }`}
             >
               {isReceipt ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-100">
+              <h2 className="text-sm font-bold text-slate-900">
                 {isReceipt ? t.receiptTitle : t.voucherTitle}
               </h2>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-xs text-slate-400">
                 {isReceipt ? t.receiptDesc : t.voucherDesc}
               </p>
             </div>
@@ -145,52 +163,72 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 p-1 transition-colors"
+            className="text-slate-400 hover:text-slate-800 p-1 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {validationError && (
-          <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-800/60 text-rose-200 text-xs flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
             <span>{validationError}</span>
           </div>
         )}
 
         <form onSubmit={handleFormSubmit} className="space-y-3.5">
-          {/* Party Selection */}
+          {/* Party Selection with Visual Avatar Badge & Audio Button */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
-              {isReceipt ? (isRtl ? 'استلمنا من السيد / العميل:' : 'Received From Customer:') : (isRtl ? 'صُرف إلى المورد / الجهة:' : 'Paid To Supplier:')}
-            </label>
-            <select
-              id="select-receipt-party"
-              value={selectedPartyId}
-              onChange={(e) => {
-                setSelectedPartyId(e.target.value);
-                const target = parties.find((p) => p.id === e.target.value);
-                if (target && target.currentBalance > 0) {
-                  setAmountInput(target.currentBalance.toString());
-                }
-              }}
-              required
-              className="w-full bg-slate-950 text-slate-100 text-xs rounded-xl px-3 py-2.5 border border-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
-            >
-              {eligibleParties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({t.currentBalance}: {formatCurrency(p.currentBalance, currency, lang)})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700">
+                {isReceipt ? (isRtl ? 'استلمنا من السيد / العميل:' : 'Received From Customer:') : (isRtl ? 'صُرف إلى المورد / الجهة:' : 'Paid To Supplier:')}
+              </label>
+              {selectedParty && (
+                <button
+                  type="button"
+                  onClick={() => speakText(`${selectedParty.name}، الرصيد المستحق ${currentOutstanding} ريال`, isRtl ? 'ar' : 'en')}
+                  title={isRtl ? 'استمع لاسم الحساب والرصيد' : 'Listen'}
+                  className="flex items-center gap-1 text-[11px] text-sky-700 hover:text-sky-800 font-semibold"
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'استمع' : 'Listen'}</span>
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedParty && (
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 shadow-2xs ${getAvatarColorClass(selectedParty.name)}`}>
+                  {selectedParty.name.charAt(0)}
+                </div>
+              )}
+              <select
+                id="select-receipt-party"
+                value={selectedPartyId}
+                onChange={(e) => {
+                  setSelectedPartyId(e.target.value);
+                  const target = parties.find((p) => p.id === e.target.value);
+                  if (target && target.currentBalance > 0) {
+                    setAmountInput(target.currentBalance.toString());
+                  }
+                }}
+                required
+                className="flex-1 bg-slate-50 text-slate-900 text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+              >
+                {eligibleParties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({t.currentBalance}: {formatCurrency(p.currentBalance, currency, lang)})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Current Outstanding Notice */}
           {selectedParty && (
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-xs shadow-2xs">
-              <span className="text-slate-400">{t.currentOutstanding}:</span>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs shadow-2xs">
+              <span className="text-slate-600 font-medium">{t.currentOutstanding}:</span>
               <div className="flex items-center gap-2">
-                <span className="font-mono font-black text-rose-300">
+                <span className="font-mono font-black text-rose-600">
                   {formatCurrency(currentOutstanding, currency, lang)}
                 </span>
                 {currentOutstanding > 0 && (
@@ -198,14 +236,14 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                     <button
                       type="button"
                       onClick={handlePayHalf}
-                      className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-750 text-[10px] font-semibold text-slate-200 border border-slate-700/50"
+                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 border border-slate-300/50 transition-colors"
                     >
                       50%
                     </button>
                     <button
                       type="button"
                       onClick={handlePayFull}
-                      className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-750 text-[10px] font-semibold text-slate-200 border border-slate-700/50"
+                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 border border-slate-300/50 transition-colors"
                     >
                       {t.payAllDebt}
                     </button>
@@ -217,7 +255,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
           {/* Amount Paid Input */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
+            <label className="block text-xs font-bold text-slate-700 mb-1">
               {t.amount} <span className="text-rose-400">*</span>
             </label>
             <div className="relative">
@@ -230,17 +268,34 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
                 placeholder="0.00"
-                className="w-full bg-slate-950 text-slate-100 font-mono text-lg font-black rounded-xl ps-3 pe-12 py-2.5 border border-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                className="w-full bg-slate-50 text-slate-900 font-mono text-lg font-black rounded-xl ps-3 pe-12 py-2.5 border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
               />
               <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">
                 {currency}
               </span>
             </div>
+
+            {/* Quick POS Increment Buttons for Low-literacy Easy Tapping */}
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-[10px] font-bold text-slate-400 me-1">
+                {isRtl ? 'إضافة سريعة:' : 'Quick Add:'}
+              </span>
+              {[10, 50, 100, 500].map((inc) => (
+                <button
+                  key={inc}
+                  type="button"
+                  onClick={() => handleAddAmountIncrement(inc)}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors"
+                >
+                  +{inc}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Payment Method */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1.5">
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">
               {t.paymentMethod}
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -249,8 +304,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 onClick={() => setPaymentMethod('CASH')}
                 className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                   paymentMethod === 'CASH'
-                    ? 'bg-emerald-950 text-emerald-300 border-emerald-700/60 shadow-2xs'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    ? 'bg-green-50 text-green-700 border-cyan-700/60 shadow-2xs'
+                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-800'
                 }`}
               >
                 {t.cash}
@@ -260,8 +315,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 onClick={() => setPaymentMethod('BANK_TRANSFER')}
                 className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                   paymentMethod === 'BANK_TRANSFER'
-                    ? 'bg-sky-950 text-sky-300 border-sky-700/60 shadow-2xs'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    ? 'bg-sky-50 text-sky-300 border-sky-700/60 shadow-2xs'
+                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-800'
                 }`}
               >
                 {t.bankTransfer}
@@ -271,8 +326,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 onClick={() => setPaymentMethod('CHEQUE')}
                 className={`py-2 rounded-xl text-xs font-bold border transition-all ${
                   paymentMethod === 'CHEQUE'
-                    ? 'bg-purple-950 text-purple-300 border-purple-700/60 shadow-2xs'
-                    : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                    ? 'bg-purple-50 text-purple-300 border-purple-700/60 shadow-2xs'
+                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-800'
                 }`}
               >
                 {t.cheque}
@@ -282,7 +337,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
           {/* Notes / Reference */}
           <div>
-            <label className="block text-xs font-bold text-slate-300 mb-1">
+            <label className="block text-xs font-bold text-slate-700 mb-1">
               {t.partyNotes}
             </label>
             <input
@@ -294,7 +349,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                   ? (isRtl ? 'مثال: سداد نقدي جزئي / رقم الحوالة البنكية' : 'e.g. Cash payment / Bank transfer ref')
                   : (isRtl ? 'مثال: سداد فاتورة توريد / شيك رقم...' : 'e.g. Payment for supply invoice / Cheque #')
               }
-              className="w-full bg-slate-950 text-slate-100 placeholder-slate-500 text-xs rounded-xl px-3 py-2.5 border border-slate-800 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+              className="w-full bg-slate-50 text-slate-900 placeholder-slate-500 text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
             />
           </div>
 
@@ -303,7 +358,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-750 text-slate-300 font-semibold text-xs transition-colors border border-slate-700/50 shadow-2xs"
+              className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-750 text-slate-700 font-semibold text-xs transition-colors border border-slate-300/50 shadow-2xs"
             >
               {t.cancel}
             </button>

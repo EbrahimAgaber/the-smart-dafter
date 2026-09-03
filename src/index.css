@@ -1,22 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&family=Cairo:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --font-inter: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-cairo: 'Cairo', system-ui, -apple-system, sans-serif;
+  --font-tajawal: 'Poppins', 'Cairo', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', 'Cairo', system-ui, -apple-system, sans-serif;
+
+  /* We are leaving the default Tailwind color palette intact! */
+}
 
 @layer base {
   :root {
-    --font-cairo: 'Cairo', system-ui, -apple-system, sans-serif;
-    --font-tajawal: 'Tajawal', system-ui, -apple-system, sans-serif;
-    --font-sans: 'Plus Jakarta Sans', 'Cairo', system-ui, -apple-system, sans-serif;
+    /* Fresh Cyan & Clean Green semantic mapping */
+    --bg-color: #F8FAFC;       /* Light slate/cyan tinted background */
+    --text-color: #0F172A;     /* Dark slate for text */
+    --card-bg: #FFFFFF;        /* White cards */
+    --border-color: #E2E8F0;   /* Light borders */
+    
+    --primary: #0891B2;        /* Cyan 600 */
+    --primary-hover: #06B6D4;  /* Cyan 500 */
+    --secondary: #22D3EE;      /* Cyan 400 */
+    
+    --success: #22C55E;        /* Green 500 */
+    --danger: #EF4444;         /* Red 500 */
+    --warning: #F59E0B;        /* Amber 500 */
   }
 
   body {
-    font-family: 'Cairo', 'Tajawal', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
     user-select: none;
-    background-color: #0b0f19;
-    color: #f1f5f9;
+    background-color: var(--bg-color);
+    color: var(--text-color);
   }
 }
 
-/* Custom scrollbar for mobile professional feel */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -25,14 +44,13 @@
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.35);
+  background: rgba(15, 23, 42, 0.2);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.6);
+  background: rgba(15, 23, 42, 0.4);
 }
 
-/* Print styles for invoices and statements */
 @media print {
   body {
     background: white !important;

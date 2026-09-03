@@ -7,8 +7,11 @@ export interface Party {
   phone: string;
   address: string;
   notes: string;
+  openingBalance?: number; // Initial opening debt/credit at onboarding
   currentBalance: number; // Deterministically calculated: For customer: positive = customer owes merchant (receivable/له). For distributor: positive = merchant owes distributor (payable/عليه).
+  avatarColor?: string;
   createdAt: string;
+  isDeleted?: boolean;
 }
 
 export interface Product {
@@ -18,6 +21,7 @@ export interface Product {
   defaultSalePrice: number;
   defaultCostPrice: number;
   barcode: string;
+  isDeleted?: boolean;
 }
 
 export type TransactionType =
@@ -42,12 +46,19 @@ export interface Transaction {
   type: TransactionType;
   date: string; // ISO string
   items: LineItem[];
+  subtotalBeforeTax?: number;
+  discountAmount?: number;
+  taxRate?: number; // e.g. 15 for 15% VAT
+  taxAmount?: number;
   totalAmount: number;
   paidAmount: number;
   remainingBalanceDelta: number; // The exact delta added/subtracted to party's balance
   notes: string;
   receiptNumber: string; // e.g., INV-2026-0001, REC-2026-0001, SUP-2026-0001, PAY-2026-0001
   paymentMethod?: PaymentMethod;
+  isVoided?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
 }
 
 export type Currency = 'SAR' | 'EGP' | 'AED' | 'KWD' | 'USD' | 'EUR' | string;
@@ -57,6 +68,8 @@ export interface BusinessProfile {
   ownerName?: string;
   phone: string;
   taxNumber: string;
+  isVatEnabled?: boolean;
+  defaultTaxRate?: number; // default 15%
   iban: string;
   bankName: string;
   logoBase64: string;

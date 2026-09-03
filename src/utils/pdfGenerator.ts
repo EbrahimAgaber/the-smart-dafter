@@ -3,7 +3,8 @@ import { jsPDF } from 'jspdf';
 
 export async function exportElementToPdf(
   elementId: string,
-  fileName = 'document.pdf'
+  fileName = 'document.pdf',
+  autoDownload = true
 ): Promise<Blob | null> {
   const element = document.getElementById(elementId);
   if (!element) {
@@ -43,7 +44,9 @@ export async function exportElementToPdf(
       heightLeft -= pageHeight;
     }
 
-    pdf.save(fileName);
+    if (autoDownload) {
+      pdf.save(fileName);
+    }
     return pdf.output('blob');
   } catch (error) {
     console.error('Error generating PDF:', error);
@@ -57,7 +60,7 @@ export async function sharePdfFile(
   title = 'Document'
 ): Promise<boolean> {
   try {
-    const blob = await exportElementToPdf(elementId, fileName);
+    const blob = await exportElementToPdf(elementId, fileName, false);
     if (!blob) return false;
 
     // Check if Web Share API with files is supported (mobile browsers, iOS Safari, Android Chrome)
@@ -70,7 +73,13 @@ export async function sharePdfFile(
       });
       return true;
     } else {
-      // Fallback: PDF is downloaded automatically by exportElementToPdf
+      // Fallback: PDF is downloaded if share is unavailable
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
       return true;
     }
   } catch (error) {

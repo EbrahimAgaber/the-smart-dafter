@@ -1,7 +1,7 @@
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 
 export function formatCurrency(amount: number, currency = 'SAR', lang: Language = 'ar'): string {
-  const formattedNum = new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', {
+  const formattedNum = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(amount));
@@ -30,7 +30,7 @@ export function formatDate(dateString: string, lang: Language = 'ar'): string {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
 
-    return new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-US', {
+    return new Intl.DateTimeFormat(lang === 'ar' ? 'en-GB' : 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
