@@ -1129,19 +1129,25 @@ export async function shareOrDownloadPdf(
 
     if (canShare) {
       try {
-        // Race navigator.share with a safety timeout so execution always resumes
+        // Hand off to OS share sheet.
+        // WebKit on iOS and some Android WebViews fail to settle the navigator.share promise when returning from external apps like WhatsApp.
+        // We race with a fast 1500ms timeout so the JavaScript event loop never blocks or deadlocks waiting for OS completion.
         const sharePromise = navigator.share({
           title,
           text: title,
           files: [file],
+        }).catch((err) => {
+          if (err?.name !== 'AbortError') {
+            console.warn('Native share dismissed or deferred error:', err);
+          }
         });
+
         await Promise.race([
           sharePromise,
-          new Promise((resolve) => setTimeout(resolve, 30000)),
+          new Promise((resolve) => setTimeout(resolve, 1500)),
         ]);
         return { success: true, blob, method: 'native_share' };
       } catch (err: any) {
-        // Any error during native sharing (AbortError, dismissal, background resumption) is handled cleanly
         if (err?.name === 'AbortError') {
           return { success: true, blob, method: 'native_share' };
         }
@@ -1155,7 +1161,6 @@ export async function shareOrDownloadPdf(
     const a = document.createElement('a');
     a.href = url;
     a.download = safeFileName;
-    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

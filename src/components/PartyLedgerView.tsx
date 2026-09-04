@@ -18,6 +18,8 @@ import {
   Printer,
   ChevronDown,
   Trash2,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -55,6 +57,10 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
   const isCustomer = party.type === 'CUSTOMER';
 
   const [typeFilter, setTypeFilter] = useState<'ALL' | TransactionType>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'UNPAID' | 'VOIDED'>('ALL');
+  const [dateFilter, setDateFilter] = useState<'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'>('ALL');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Compute rolling running balances deterministically
@@ -99,12 +105,46 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
     });
   }, [transactions, isCustomer, party.openingBalance]);
 
-  // Then display descending (most recent first) with filters
+  // Then display descending (most recent first) with comprehensive filters
   const displayEntries = useMemo(() => {
     let list = [...chronologicalEntries].reverse();
+
+    // Type filter
     if (typeFilter !== 'ALL') {
       list = list.filter((e) => e.transaction.type === typeFilter);
     }
+
+    // Status filter
+    if (statusFilter === 'UNPAID') {
+      list = list.filter(
+        (e) => !e.transaction.isVoided && (e.transaction.totalAmount - e.transaction.paidAmount > 0)
+      );
+    } else if (statusFilter === 'VOIDED') {
+      list = list.filter((e) => e.transaction.isVoided);
+    }
+
+    // Date range filter
+    if (dateFilter !== 'ALL') {
+      const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      list = list.filter((e) => {
+        const txDate = e.transaction.date ? e.transaction.date.split('T')[0] : '';
+        if (dateFilter === 'TODAY') return txDate === todayStr;
+        if (dateFilter === 'THIS_WEEK') return txDate >= sevenDaysAgo;
+        if (dateFilter === 'THIS_MONTH') return txDate >= thirtyDaysAgo;
+        if (dateFilter === 'CUSTOM') {
+          if (customStartDate && txDate < customStartDate) return false;
+          if (customEndDate && txDate > customEndDate) return false;
+          return true;
+        }
+        return true;
+      });
+    }
+
+    // Search query filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(
@@ -115,7 +155,36 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
       );
     }
     return list;
-  }, [chronologicalEntries, typeFilter, searchQuery]);
+  }, [chronologicalEntries, typeFilter, statusFilter, dateFilter, customStartDate, customEndDate, searchQuery]);
+
+  const filteredStats = useMemo(() => {
+    let totalDebit = 0;
+    let totalCredit = 0;
+    displayEntries.forEach((e) => {
+      totalDebit += e.debit;
+      totalCredit += e.credit;
+    });
+    return {
+      totalDebit: Math.round(totalDebit * 100) / 100,
+      totalCredit: Math.round(totalCredit * 100) / 100,
+      count: displayEntries.length,
+    };
+  }, [displayEntries]);
+
+  const hasActiveFilters =
+    typeFilter !== 'ALL' ||
+    statusFilter !== 'ALL' ||
+    dateFilter !== 'ALL' ||
+    searchQuery.trim() !== '';
+
+  const handleResetFilters = () => {
+    setTypeFilter('ALL');
+    setStatusFilter('ALL');
+    setDateFilter('ALL');
+    setCustomStartDate('');
+    setCustomEndDate('');
+    setSearchQuery('');
+  };
 
   const handleWhatsAppShare = () => {
     const cleanPhone = sanitizePhoneNumber(party.phone);
@@ -269,15 +338,181 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
         </div>
       </div>
 
-      {/* Search Filter inside Ledger */}
-      <div>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={isRtl ? 'بحث في السندات أو الأصناف أو الملاحظات...' : 'Search entries, items, notes...'}
-          className="w-full bg-white text-slate-900 placeholder-slate-400 text-xs rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs"
-        />
+      {/* Search & Filters Section */}
+      <div className="space-y-2 bg-white/70 p-3 rounded-2xl border border-slate-200 shadow-2xs">
+        {/* Search Bar */}
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={isRtl ? 'بحث في السندات أو الأصناف أو الملاحظات...' : 'Search entries, items, notes...'}
+            className="w-full bg-white text-slate-900 placeholder-slate-400 text-xs rounded-xl ps-3 pe-8 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute end-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Transaction Nature / Status Filter Chips */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
+          <button
+            onClick={() => { setTypeFilter('ALL'); setStatusFilter('ALL'); }}
+            className={`px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 ${
+              typeFilter === 'ALL' && statusFilter === 'ALL'
+                ? 'bg-slate-800 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.allTypes}
+          </button>
+          <button
+            onClick={() => { setTypeFilter(isCustomer ? 'SALE_CREDIT' : 'SUPPLY_CREDIT'); setStatusFilter('ALL'); }}
+            className={`px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 ${
+              typeFilter === (isCustomer ? 'SALE_CREDIT' : 'SUPPLY_CREDIT') && statusFilter === 'ALL'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {isCustomer ? t.salesOnly : t.suppliesOnly}
+          </button>
+          <button
+            onClick={() => { setTypeFilter(isCustomer ? 'PAYMENT_RECEIVED' : 'PAYMENT_PAID'); setStatusFilter('ALL'); }}
+            className={`px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 ${
+              typeFilter === (isCustomer ? 'PAYMENT_RECEIVED' : 'PAYMENT_PAID') && statusFilter === 'ALL'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.paymentsOnly}
+          </button>
+          <button
+            onClick={() => { setStatusFilter(statusFilter === 'UNPAID' ? 'ALL' : 'UNPAID'); setTypeFilter('ALL'); }}
+            className={`px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 ${
+              statusFilter === 'UNPAID'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.unpaidOnly}
+          </button>
+          <button
+            onClick={() => { setStatusFilter(statusFilter === 'VOIDED' ? 'ALL' : 'VOIDED'); setTypeFilter('ALL'); }}
+            className={`px-2.5 py-1 rounded-lg font-bold transition-all shrink-0 ${
+              statusFilter === 'VOIDED'
+                ? 'bg-purple-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.voidedOnly}
+          </button>
+        </div>
+
+        {/* Date Filter Chips & Custom Range Inputs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs pt-0.5">
+          <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1 shrink-0 ps-0.5">
+            <Calendar className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+          </span>
+          <button
+            onClick={() => setDateFilter('ALL')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
+              dateFilter === 'ALL'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.allDates}
+          </button>
+          <button
+            onClick={() => setDateFilter('TODAY')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
+              dateFilter === 'TODAY'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.today}
+          </button>
+          <button
+            onClick={() => setDateFilter('THIS_WEEK')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
+              dateFilter === 'THIS_WEEK'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.thisWeek}
+          </button>
+          <button
+            onClick={() => setDateFilter('THIS_MONTH')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
+              dateFilter === 'THIS_MONTH'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.thisMonth}
+          </button>
+          <button
+            onClick={() => setDateFilter(dateFilter === 'CUSTOM' ? 'ALL' : 'CUSTOM')}
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 ${
+              dateFilter === 'CUSTOM'
+                ? 'bg-cyan-700 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+            }`}
+          >
+            {t.customDate}
+          </button>
+        </div>
+
+        {/* Custom Date Pickers */}
+        {dateFilter === 'CUSTOM' && (
+          <div className="flex items-center gap-2 pt-1 flex-wrap text-xs bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-1">
+              <span className="text-slate-500 font-semibold">{isRtl ? 'من:' : 'From:'}</span>
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="bg-white text-slate-800 text-xs rounded-lg px-2 py-1 border border-slate-200 font-mono"
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-slate-500 font-semibold">{isRtl ? 'إلى:' : 'To:'}</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="bg-white text-slate-800 text-xs rounded-lg px-2 py-1 border border-slate-200 font-mono"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Filter Summary & Reset Bar */}
+        {hasActiveFilters && (
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/80 text-[11px] flex-wrap">
+            <div className="flex items-center gap-2 text-slate-600 font-semibold">
+              <span>{t.filteredCount}: <strong className="text-slate-900 font-mono">{filteredStats.count}</strong></span>
+              <span>•</span>
+              <span className="text-rose-600 font-mono">+{formatCurrency(filteredStats.totalDebit, currency, lang)}</span>
+              <span>•</span>
+              <span className="text-green-600 font-mono">-{formatCurrency(filteredStats.totalCredit, currency, lang)}</span>
+            </div>
+            <button
+              onClick={handleResetFilters}
+              className="flex items-center gap-1 text-rose-600 hover:text-rose-700 font-bold bg-rose-50 hover:bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{t.clearFilters}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Statement Entries History */}
@@ -286,40 +521,6 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
           <h2 className="text-xs font-bold text-slate-700">
             {t.accountStatement} ({displayEntries.length})
           </h2>
-
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1 text-xs">
-            <button
-              onClick={() => setTypeFilter('ALL')}
-              className={`px-2 py-0.5 rounded-md font-medium transition-all ${
-                typeFilter === 'ALL'
-                  ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-2xs'
-                  : 'bg-white text-slate-500 hover:text-slate-800 border border-slate-200'
-              }`}
-            >
-              {t.allTypes}
-            </button>
-            <button
-              onClick={() => setTypeFilter(isCustomer ? 'SALE_CREDIT' : 'SUPPLY_CREDIT')}
-              className={`px-2 py-0.5 rounded-md font-medium transition-all ${
-                typeFilter === (isCustomer ? 'SALE_CREDIT' : 'SUPPLY_CREDIT')
-                  ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-2xs'
-                  : 'bg-white text-slate-500 hover:text-slate-800 border border-slate-200'
-              }`}
-            >
-              {isCustomer ? t.salesOnly : t.suppliesOnly}
-            </button>
-            <button
-              onClick={() => setTypeFilter(isCustomer ? 'PAYMENT_RECEIVED' : 'PAYMENT_PAID')}
-              className={`px-2 py-0.5 rounded-md font-medium transition-all ${
-                typeFilter === (isCustomer ? 'PAYMENT_RECEIVED' : 'PAYMENT_PAID')
-                  ? 'bg-slate-800 text-white font-bold border border-slate-700 shadow-2xs'
-                  : 'bg-white text-slate-500 hover:text-slate-800 border border-slate-200'
-              }`}
-            >
-              {t.paymentsOnly}
-            </button>
-          </div>
         </div>
 
         {displayEntries.length === 0 ? (

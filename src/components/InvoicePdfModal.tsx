@@ -160,6 +160,9 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
         blob = doc.output('blob');
       }
 
+      // Generation finished, release UI immediately so returning from external share is responsive
+      setIsGenerating(false);
+
       const result = await shareOrDownloadPdf(
         doc,
         pdfFileName,
@@ -545,8 +548,6 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
             </span>
             <a
               href={pdfUrl}
-              target="_blank"
-              rel="noopener noreferrer"
               download={pdfFileName}
               className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-xs active:scale-95 transition-all"
             >

@@ -85,6 +85,7 @@ export default function App() {
 
   // Navigation states
   const [selectedPartyForLedger, setSelectedPartyForLedger] = useState<Party | null>(null);
+  const [selectedRegionFilter, setSelectedRegionFilter] = useState<string>('all');
 
   // Memoized party transactions to prevent redundant canvas pre-renders
   const selectedPartyTransactions = useMemo(() => {
@@ -420,13 +421,17 @@ export default function App() {
               setActiveModal('invoice-pdf');
             }
           }}
-          onNavigateParties={() => setActiveTab('parties')}
+          onNavigateParties={(region) => {
+            setSelectedRegionFilter(region || 'all');
+            setActiveTab('parties');
+          }}
         />
       ) : activeTab === 'parties' ? (
         <PartyDirectoryView
           parties={parties}
           profile={profile}
           lang={lang}
+          initialRegion={selectedRegionFilter}
           onSelectPartyLedger={(party) => setSelectedPartyForLedger(party)}
           onOpenReceivePaymentForParty={(party) => {
             if (party.type === 'CUSTOMER') {

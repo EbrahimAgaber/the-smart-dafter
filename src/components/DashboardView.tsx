@@ -36,7 +36,7 @@ interface DashboardViewProps {
   onOpenNewSupply: () => void;
   onOpenPayDistributor: () => void;
   onSelectTransaction: (tx: Transaction) => void;
-  onNavigateParties: () => void;
+  onNavigateParties: (region?: string) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -294,7 +294,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {regionalReceivables.slice(0, 4).map((r) => (
               <div
                 key={r.region}
-                onClick={onNavigateParties}
+                onClick={() => onNavigateParties(r.region)}
                 className="bg-white hover:bg-slate-50 cursor-pointer p-3.5 rounded-2xl border border-slate-100 shadow-2xs transition-all group"
               >
                 <div className="flex items-center justify-between mb-1.5">

@@ -240,10 +240,15 @@ export async function shareReceiptPdf(
         title: `فاتورة ${order.formattedOrderNumber}`,
         text: `فاتورة كافيه الأفق - طلب رقم ${order.formattedOrderNumber} بقيمة ${order.total.toFixed(2)} ر.س`,
         files: [file],
+      }).catch((err) => {
+        if ((err as Error)?.name !== 'AbortError') {
+          console.warn('Native share dismissed or deferred error:', err);
+        }
       });
+
       await Promise.race([
         sharePromise,
-        new Promise((resolve) => setTimeout(resolve, 30000)),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
       ]);
       return { shared: true, method: 'web-share' };
     } catch (e) {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   UserPlus,
@@ -16,6 +16,8 @@ import {
   Edit2,
   X,
   Contact,
+  ArrowUpDown,
+  RotateCcw,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, PartyType } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -26,6 +28,7 @@ interface PartyDirectoryViewProps {
   parties: Party[];
   profile: BusinessProfile;
   lang: Language;
+  initialRegion?: string;
   onSelectPartyLedger: (party: Party) => void;
   onOpenReceivePaymentForParty: (party: Party) => void;
   onOpenNewSaleForParty: (party: Party) => void;
@@ -38,6 +41,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
   parties,
   profile,
   lang,
+  initialRegion,
   onSelectPartyLedger,
   onOpenReceivePaymentForParty,
   onOpenNewSaleForParty,
@@ -52,7 +56,14 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
   const [activeSegment, setActiveSegment] = useState<PartyType>('CUSTOMER');
   const [searchQuery, setSearchQuery] = useState('');
   const [balanceFilter, setBalanceFilter] = useState<'all' | 'debtors' | 'settled'>('all');
-  const [selectedRegion, setSelectedRegion] = useState<string>('all');
+  const [selectedRegion, setSelectedRegion] = useState<string>(initialRegion || 'all');
+  const [sortBy, setSortBy] = useState<'highestDebt' | 'lowestDebt' | 'name' | 'recent'>('highestDebt');
+
+  useEffect(() => {
+    if (initialRegion) {
+      setSelectedRegion(initialRegion);
+    }
+  }, [initialRegion]);
 
   // Modal State for Adding/Editing Party
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -183,8 +194,17 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
         if (balanceFilter === 'settled') return p.currentBalance === 0;
         return true;
       })
-      .sort((a, b) => b.currentBalance - a.currentBalance);
-  }, [parties, activeSegment, selectedRegion, searchQuery, balanceFilter]);
+      .sort((a, b) => {
+        if (sortBy === 'lowestDebt') return a.currentBalance - b.currentBalance;
+        if (sortBy === 'name') return a.name.localeCompare(b.name, isRtl ? 'ar' : 'en');
+        if (sortBy === 'recent') {
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return dateB - dateA;
+        }
+        return b.currentBalance - a.currentBalance;
+      });
+  }, [parties, activeSegment, selectedRegion, searchQuery, balanceFilter, sortBy, isRtl]);
 
   const totalOutstanding = useMemo(() => {
     return filteredParties.reduce((sum, p) => sum + p.currentBalance, 0);
@@ -392,6 +412,73 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                 </button>
               );
             })}
+          </div>
+
+          {/* Sorting & Filter Reset Controls */}
+          <div className="flex items-center justify-between gap-2 text-xs pt-1 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                <span>{t.sortBy}:</span>
+              </span>
+              <div className="flex items-center gap-1 bg-white p-0.5 rounded-xl border border-slate-200">
+                <button
+                  onClick={() => setSortBy('highestDebt')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    sortBy === 'highestDebt'
+                      ? 'bg-slate-100 text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {t.sortHighestDebt}
+                </button>
+                <button
+                  onClick={() => setSortBy('lowestDebt')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    sortBy === 'lowestDebt'
+                      ? 'bg-slate-100 text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {t.sortLowestDebt}
+                </button>
+                <button
+                  onClick={() => setSortBy('name')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    sortBy === 'name'
+                      ? 'bg-slate-100 text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {t.sortName}
+                </button>
+                <button
+                  onClick={() => setSortBy('recent')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                    sortBy === 'recent'
+                      ? 'bg-slate-100 text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {t.sortRecent}
+                </button>
+              </div>
+            </div>
+
+            {(selectedRegion !== 'all' || balanceFilter !== 'all' || searchQuery.trim() !== '' || sortBy !== 'highestDebt') && (
+              <button
+                onClick={() => {
+                  setSelectedRegion('all');
+                  setBalanceFilter('all');
+                  setSearchQuery('');
+                  setSortBy('highestDebt');
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-rose-600 text-[11px] font-bold transition-colors border border-rose-200/60"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>{t.clearFilters}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
