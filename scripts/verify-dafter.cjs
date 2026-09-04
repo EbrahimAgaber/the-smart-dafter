@@ -525,13 +525,14 @@ function runTier3() {
       const isWindows = process.platform === 'win32';
       const localTsc = path.join(PROJECT_ROOT, 'node_modules', '.bin', isWindows ? 'tsc.cmd' : 'tsc');
       const hasLocalTsc = fs.existsSync(localTsc);
-      const cmd = hasLocalTsc ? localTsc : (isWindows ? 'npx.cmd' : 'npx');
+      const cmd = hasLocalTsc ? (isWindows ? `"${localTsc}"` : localTsc) : (isWindows ? 'npx.cmd' : 'npx');
       const args = hasLocalTsc ? ['--noEmit'] : ['tsc', '--noEmit'];
       const result = spawnSync(cmd, args, {
         cwd: PROJECT_ROOT,
         encoding: 'utf8',
         timeout: 60000,
         shell: true,
+        windowsVerbatimArguments: true,
       });
 
       const exitCode = result.status;
