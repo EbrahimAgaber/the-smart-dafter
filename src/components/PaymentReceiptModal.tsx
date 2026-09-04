@@ -128,7 +128,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 48, scale: 0.98 }}
         transition={{ type: 'spring', damping: 28, stiffness: 340, mass: 0.8 }}
-        className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl"
+        className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))]"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
@@ -154,7 +154,8 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-800 p-1 transition-colors"
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -212,18 +213,18 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                   {formatCurrency(currentOutstanding, currency, lang)}
                 </span>
                 {currentOutstanding > 0 && (
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={handlePayHalf}
-                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 border border-slate-300/50 transition-colors"
+                      className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 border border-slate-300/50 transition-colors flex items-center justify-center font-mono"
                     >
                       50%
                     </button>
                     <button
                       type="button"
                       onClick={handlePayFull}
-                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 border border-slate-300/50 transition-colors"
+                      className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-800 border border-slate-300/50 transition-colors flex items-center justify-center"
                     >
                       {t.payAllDebt}
                     </button>
@@ -248,7 +249,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                 value={amountInput}
                 onChange={(e) => setAmountInput(e.target.value)}
                 placeholder="0.00"
-                className="w-full bg-slate-50 text-slate-900 font-mono text-lg font-black rounded-xl ps-3 pe-12 py-2.5 border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
+                className="w-full bg-slate-50 text-slate-900 font-mono text-lg font-black rounded-xl ps-3 pe-12 py-2.5 min-h-[44px] border border-slate-200 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/20 shadow-2xs"
               />
               <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 font-mono">
                 {currency}
@@ -265,7 +266,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
                   key={inc}
                   type="button"
                   onClick={() => handleAddAmountIncrement(inc)}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors"
+                  className="min-h-[44px] min-w-[44px] text-xs px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors flex items-center justify-center"
                 >
                   +{inc}
                 </button>
@@ -282,7 +283,7 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('CASH')}
-                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                className={`min-h-[44px] py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center ${
                   paymentMethod === 'CASH'
                     ? 'bg-green-50 text-green-700 border-cyan-700/60 shadow-2xs'
                     : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-800'
@@ -293,9 +294,9 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('BANK_TRANSFER')}
-                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                className={`min-h-[44px] py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center ${
                   paymentMethod === 'BANK_TRANSFER'
-                    ? 'bg-sky-50 text-sky-300 border-sky-700/60 shadow-2xs'
+                    ? 'bg-sky-50 text-sky-700 border-sky-700/60 shadow-2xs'
                     : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-800'
                 }`}
               >
@@ -304,9 +305,9 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
               <button
                 type="button"
                 onClick={() => setPaymentMethod('CHEQUE')}
-                className={`py-2 rounded-xl text-xs font-bold border transition-all ${
+                className={`min-h-[44px] py-2.5 rounded-xl text-xs font-bold border transition-all flex items-center justify-center ${
                   paymentMethod === 'CHEQUE'
-                    ? 'bg-purple-50 text-purple-300 border-purple-700/60 shadow-2xs'
+                    ? 'bg-purple-50 text-purple-700 border-purple-700/60 shadow-2xs'
                     : 'bg-slate-50 text-slate-400 border-slate-200 hover:text-slate-800'
                 }`}
               >
@@ -338,14 +339,14 @@ export const PaymentReceiptModal: React.FC<PaymentReceiptModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-750 text-slate-700 font-semibold text-xs transition-colors border border-slate-300/50 shadow-2xs"
+              className="flex-1 min-h-[44px] py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors border border-slate-300/50 shadow-2xs"
             >
               {t.cancel}
             </button>
             <button
               id="btn-confirm-save-receipt"
               type="submit"
-              className={`flex-1 py-3 rounded-xl text-white font-bold text-xs shadow-md transition-all active:scale-98 border ${
+              className={`flex-1 min-h-[44px] py-3 rounded-xl text-white font-bold text-xs shadow-md transition-all active:scale-98 border ${
                 isReceipt
                   ? 'bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 shadow-sky-950/30 border-sky-400/20'
                   : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-950/30 border-purple-400/20'

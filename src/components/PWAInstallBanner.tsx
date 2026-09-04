@@ -72,9 +72,10 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({
 
           <button
             onClick={() => setDismissed(true)}
-            className="p-1 text-slate-400 hover:text-white transition-colors"
+            aria-label={isRtl ? 'إغلاق الإشعار' : 'Dismiss banner'}
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-white transition-colors rounded-lg"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -90,7 +91,8 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({
               </h3>
               <button
                 onClick={() => setShowIOSGuide(false)}
-                className="p-1 text-slate-400 hover:text-slate-900"
+                aria-label={isRtl ? 'إغلاق' : 'Close'}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-900 rounded-xl transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>

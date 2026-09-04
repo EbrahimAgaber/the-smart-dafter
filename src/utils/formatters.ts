@@ -30,7 +30,7 @@ export function formatDate(dateString: string, lang: Language = 'ar'): string {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return dateString;
 
-    return new Intl.DateTimeFormat(lang === 'ar' ? 'en-GB' : 'en-US', {
+    return new Intl.DateTimeFormat(lang === 'ar' ? 'ar-SA' : 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

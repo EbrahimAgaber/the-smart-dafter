@@ -71,6 +71,10 @@ export function calculatePartyBalance(party: Party, partyTransactions: Transacti
   return Math.round(balance * 100) / 100;
 }
 
+export interface LedgerStoreSubscriber {
+  (): void;
+}
+
 export class SQLiteLedgerStore {
   private static instance: SQLiteLedgerStore;
 
@@ -78,6 +82,7 @@ export class SQLiteLedgerStore {
   private products: Product[] = [];
   private transactions: Transaction[] = [];
   private profile: BusinessProfile = defaultBusinessProfile;
+  private subscribers: (() => void)[] = [];
 
   private constructor() {
     this.loadFromStorage();
@@ -88,6 +93,27 @@ export class SQLiteLedgerStore {
       SQLiteLedgerStore.instance = new SQLiteLedgerStore();
     }
     return SQLiteLedgerStore.instance;
+  }
+
+  public subscribe(callback: () => void): () => void {
+    this.subscribers.push(callback);
+    return () => {
+      this.subscribers = this.subscribers.filter((cb) => cb !== callback);
+    };
+  }
+
+  private notifySubscribers(): void {
+    this.subscribers.forEach((callback) => {
+      try {
+        callback();
+      } catch (err) {
+        console.error('Error executing ledger store subscriber:', err);
+      }
+    });
+  }
+
+  private notifyListeners(): void {
+    this.notifySubscribers();
   }
 
   private loadFromStorage(): void {
@@ -134,6 +160,8 @@ export class SQLiteLedgerStore {
           profile: this.profile,
         }).catch(() => {});
       }
+      this.notifySubscribers();
+      this.notifyListeners();
     }).catch(() => {});
   }
 

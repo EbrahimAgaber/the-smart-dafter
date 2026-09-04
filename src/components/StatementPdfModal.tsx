@@ -15,7 +15,7 @@ import {
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
-import { exportElementToPdf, sharePdfFile } from '../utils/pdfGenerator';
+import { generateStatementPdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 
 interface StatementPdfModalProps {
   party: Party;
@@ -41,10 +41,22 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+
+  // Filter transactions by date range
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((tx) => {
+      const txDate = tx.date ? tx.date.split('T')[0] : '';
+      if (startDate && txDate < startDate) return false;
+      if (endDate && txDate > endDate) return false;
+      return true;
+    });
+  }, [transactions, startDate, endDate]);
 
   // Compute ascending ledger entries with rolling running balances
   const statementRows = useMemo(() => {
-    const sortedAsc = [...transactions].sort(
+    const sortedAsc = [...filteredTransactions].sort(
       (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
 
@@ -82,52 +94,84 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
         runningBalance: Math.round(rolling * 100) / 100,
       };
     });
-  }, [transactions, isCustomer, party.openingBalance]);
+  }, [filteredTransactions, isCustomer, party.openingBalance]);
 
   const pdfFileName = `${profile.name.replace(/\s+/g, '_')}_Statement_${party.name.replace(/\s+/g, '_')}.pdf`;
 
-  // Background pre-generate PDF Blob so iOS user click gesture is preserved instantly
+  // Precompute Statement PDF Blob without pre-render timeout hacks
   useEffect(() => {
     let mounted = true;
-    const timer = setTimeout(async () => {
+    let activeUrl: string | null = null;
+
+    async function preparePdf() {
       try {
-        const b = await exportElementToPdf('statement-render-target', pdfFileName, false);
-        if (mounted && b) {
-          setPdfBlob(b);
-          setPdfUrl(URL.createObjectURL(b));
+        const doc = await generateStatementPdf({
+          profile,
+          party,
+          transactions: filteredTransactions,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          lang,
+        });
+        if (mounted) {
+          const blob = doc.output('blob');
+          setPdfBlob(blob);
+          activeUrl = URL.createObjectURL(blob);
+          setPdfUrl(activeUrl);
         }
       } catch (e) {
         console.warn('Precomputing Statement PDF failed:', e);
       }
-    }, 450);
+    }
+
+    preparePdf();
 
     return () => {
       mounted = false;
-      clearTimeout(timer);
+      if (activeUrl) {
+        URL.revokeObjectURL(activeUrl);
+      }
     };
-  }, [party, transactions, profile]);
+  }, [party, filteredTransactions, startDate, endDate, profile, lang]);
 
   const handleDownloadPdf = async () => {
     setIsGenerating(true);
-    await exportElementToPdf('statement-render-target', pdfFileName, true);
-    setIsGenerating(false);
+    try {
+      const doc = await generateStatementPdf({
+        profile,
+        party,
+        transactions: filteredTransactions,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        lang,
+      });
+      doc.save(pdfFileName);
+    } catch (err) {
+      console.error('Statement download error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleSharePdf = async () => {
     setIsGenerating(true);
     setShareFeedback(null);
     try {
-      const result = await sharePdfFile(
-        'statement-render-target',
+      const doc = await generateStatementPdf({
+        profile,
+        party,
+        transactions: filteredTransactions,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        lang,
+      });
+      const result = await shareOrDownloadPdf(
+        doc,
         pdfFileName,
-        `${t.statementHeaderTitle} - ${party.name}`,
-        pdfBlob
+        `${t.statementHeaderTitle} - ${party.name}`
       );
       if (result.success) {
-        if (result.url) {
-          setPdfUrl(result.url);
-          setShareFeedback(isRtl ? 'تم تجهيز كشف الحساب كـ PDF!' : 'Statement PDF ready!');
-        }
+        setShareFeedback(isRtl ? 'تم تجهيز ومشاركة كشف الحساب كـ PDF!' : 'Statement PDF ready and shared!');
       } else {
         alert(isRtl ? 'تعذر إنشاء كشف الحساب. يرجى المحاولة ثانية.' : 'Could not generate Statement. Please retry.');
       }
@@ -193,9 +237,9 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
               onClick={handleSharePdf}
               disabled={isGenerating}
               title={t.sharePdf}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-2xs"
+              className="flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors shadow-2xs"
             >
-              <Share2 className="w-3.5 h-3.5" />
+              <Share2 className="w-4 h-4" />
               <span className="hidden sm:inline">
                 {isGenerating ? t.generatingPdf : t.sharePdf}
               </span>
@@ -206,27 +250,71 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
               onClick={handleDownloadPdf}
               disabled={isGenerating}
               title={t.downloadPdf}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              className="flex items-center gap-1.5 min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300/60 shadow-2xs transition-colors"
             >
-              <Download className="w-3.5 h-3.5 text-sky-600" />
+              <Download className="w-4 h-4 text-sky-600" />
               <span className="hidden md:inline">PDF</span>
             </button>
 
             <button
               onClick={handlePrint}
               title={t.printDocument}
-              className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300/60 shadow-2xs transition-colors"
+              aria-label={t.printDocument}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300/60 shadow-2xs transition-colors"
             >
               <Printer className="w-4 h-4" />
             </button>
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
+              aria-label={isRtl ? 'إغلاق' : 'Close'}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Date Range Filter Bar */}
+        <div className="no-print bg-slate-50 border border-slate-200 px-4 py-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-2.5 text-xs shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-slate-700 flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-cyan-600" />
+              <span>{isRtl ? 'تصفية بالتاريخ:' : 'Date Filter:'}</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                aria-label={isRtl ? 'من تاريخ' : 'Start Date'}
+                className="bg-white text-slate-800 text-xs rounded-xl px-2.5 py-1.5 min-h-[38px] border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs font-mono"
+              />
+              <span className="text-slate-400 font-bold">{isRtl ? 'إلى' : 'to'}</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                aria-label={isRtl ? 'إلى تاريخ' : 'End Date'}
+                className="bg-white text-slate-800 text-xs rounded-xl px-2.5 py-1.5 min-h-[38px] border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs font-mono"
+              />
+            </div>
+            {(startDate || endDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold transition-colors flex items-center justify-center"
+              >
+                {isRtl ? 'إلغاء التصفية' : 'Reset'}
+              </button>
+            )}
+          </div>
+          <span className="text-[11px] text-slate-500 font-mono font-medium">
+            {filteredTransactions.length} {isRtl ? 'معاملة مسجلة' : 'transactions'}
+          </span>
         </div>
 
         {/* Scrollable Printable Paper Canvas */}
@@ -263,6 +351,12 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
                   <span>{t.createdOn}: </span>
                   <span className="font-bold">{formatDate(new Date().toISOString(), lang)}</span>
                 </div>
+                {(startDate || endDate) && (
+                  <div className="text-xs text-stone-600 mt-1 font-mono">
+                    <span>{isRtl ? 'الفترة: ' : 'Period: '}</span>
+                    <span className="font-bold">{startDate || '...'} {isRtl ? 'إلى' : 'to'} {endDate || '...'}</span>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -54,7 +54,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
             key={item.id}
             id={`nav-tab-${item.id}`}
             onClick={() => onSelectTab(item.id)}
-            className={`relative flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all duration-200 min-w-[64px] active:scale-95 ${
+            className={`relative flex flex-col items-center justify-center py-1 px-3 rounded-2xl transition-all duration-200 min-w-[64px] min-h-[48px] active:scale-95 ${
               isActive
                 ? 'text-cyan-600'
                 : 'text-slate-400 hover:text-slate-600'
@@ -65,7 +65,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
               {item.badge !== undefined && (
                 <span
                   id={`nav-badge-${item.id}`}
-                  className="absolute -top-1 -end-1 bg-red-500 text-white text-[10px] font-mono font-black px-1.5 py-0.2 rounded-full min-w-[16px] text-center shadow-xs"
+                  className="absolute -top-1 -end-1 bg-red-500 text-white text-[10px] font-mono font-black px-1.5 py-0.5 rounded-full min-w-[16px] text-center shadow-xs"
                 >
                   {item.badge}
                 </span>

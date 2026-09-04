@@ -13,10 +13,8 @@ import {
   Store,
 } from 'lucide-react';
 import { Language } from '../types';
-import { generateLicenseKey, PlanDurationUnit } from '../utils/licenseManager';
+import { generateLicenseKey, PlanDurationUnit, verifyAdminPin } from '../utils/licenseManager';
 import { playSuccessChime } from '../utils/speechFeedback';
-
-const MASTER_PIN = '7788'; // Or DAFTAR-2026
 
 interface AdminKeyGeneratorModalProps {
   lang: Language;
@@ -31,6 +29,7 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
   const [isUnlocked, setIsUnlocked] = useState<boolean>(false);
   const [pinInput, setPinInput] = useState<string>('');
   const [pinError, setPinError] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   // Generator form state
   const [durationValue, setDurationValue] = useState<number>(30);
@@ -43,9 +42,12 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
   const [generatedPlanName, setGeneratedPlanName] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pinInput.trim() === MASTER_PIN || pinInput.trim().toUpperCase() === 'DAFTAR-2026') {
+    setIsVerifying(true);
+    const valid = await verifyAdminPin(pinInput);
+    setIsVerifying(false);
+    if (valid) {
       setIsUnlocked(true);
       setPinError('');
     } else {
@@ -88,7 +90,7 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-70 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 overflow-y-auto"
+      className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 overflow-y-auto"
     >
       <motion.div
         id="modal-admin-keygen-container"
@@ -116,7 +118,7 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -139,7 +141,7 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
                 type="password"
                 value={pinInput}
                 onChange={(e) => setPinInput(e.target.value)}
-                placeholder={isRtl ? 'الرمز السري (7788)' : 'Master PIN (7788)'}
+                placeholder={isRtl ? 'الرمز السري للإدارة' : 'Master Admin PIN'}
                 className="w-full bg-slate-50 text-slate-900 font-mono text-center text-sm font-bold rounded-xl px-3 py-3 border border-slate-200 focus:outline-none focus:border-purple-500 shadow-2xs"
               />
               {pinError && (
@@ -151,9 +153,12 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-950/20 active:scale-98"
+              disabled={isVerifying}
+              className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-950/20 active:scale-98 disabled:opacity-60"
             >
-              {isRtl ? 'دخول لوحة التوليد' : 'Unlock Generator'}
+              {isVerifying
+                ? (isRtl ? 'جار التحقق...' : 'Verifying...')
+                : (isRtl ? 'دخول لوحة التوليد' : 'Unlock Generator')}
             </button>
           </form>
         ) : (

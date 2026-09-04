@@ -57,6 +57,15 @@ type ModalType =
   | 'security-guard'
   | 'admin-keygen';
 
+const ModalLoadingSpinner: React.FC<{ lang: Language }> = ({ lang }) => (
+  <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+    <div className="bg-white px-5 py-4 rounded-2xl shadow-xl flex items-center gap-3 text-xs font-bold text-slate-700 border border-slate-200">
+      <div className="w-5 h-5 border-2 border-cyan-600 border-t-transparent rounded-full animate-spin" />
+      <span>{lang === 'ar' ? 'جاري التحميل...' : 'Loading...'}</span>
+    </div>
+  </div>
+);
+
 export default function App() {
   const store = useMemo(() => SQLiteLedgerStore.getInstance(), []);
 
@@ -105,6 +114,14 @@ export default function App() {
     setSelectedPartyForLedger((prev) => (prev ? store.getPartyById(prev.id) || null : null));
   }, [store]);
 
+  // Subscribe to store updates (e.g. IndexedDB async hydration)
+  useEffect(() => {
+    const unsubscribe = store.subscribe(() => {
+      refreshStoreData();
+    });
+    return unsubscribe;
+  }, [store, refreshStoreData]);
+
   const handleToggleLang = () => {
     setLang((prev) => (prev === 'ar' ? 'en' : 'ar'));
   };
@@ -124,6 +141,10 @@ export default function App() {
     notes: string;
     paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
   }) => {
+    if (!checkCanCreateInvoice()) {
+      setActiveModal('security-guard');
+      return;
+    }
     const newTx = store.addTransaction(txData);
     refreshStoreData();
     setActiveModal(null);
@@ -143,7 +164,7 @@ export default function App() {
     refreshStoreData();
   };
 
-  // Gatekeepers for Invoice Creation via Security Guard
+  // Gatekeepers for Invoice / Receipt / Voucher Creation via Security Guard
   const handleOpenSaleModal = (party?: Party | null) => {
     if (!checkCanCreateInvoice()) {
       setActiveModal('security-guard');
@@ -162,6 +183,24 @@ export default function App() {
     setActiveModal('invoice-supply');
   };
 
+  const handleOpenReceiptModal = (party?: Party | null) => {
+    if (!checkCanCreateInvoice()) {
+      setActiveModal('security-guard');
+      return;
+    }
+    setModalParty(party || null);
+    setActiveModal('receipt');
+  };
+
+  const handleOpenVoucherModal = (party?: Party | null) => {
+    if (!checkCanCreateInvoice()) {
+      setActiveModal('security-guard');
+      return;
+    }
+    setModalParty(party || null);
+    setActiveModal('voucher');
+  };
+
   // Payment receipt submission handler
   const handleCreateReceipt = (data: {
     partyId: string;
@@ -170,7 +209,10 @@ export default function App() {
     paymentMethod: PaymentMethod;
     notes: string;
   }) => {
-    const isCustomerReceipt = data.type === 'PAYMENT_RECEIVED';
+    if (!checkCanCreateInvoice()) {
+      setActiveModal('security-guard');
+      return;
+    }
     const newTx = store.addTransaction({
       partyId: data.partyId,
       type: data.type,
@@ -178,7 +220,7 @@ export default function App() {
       items: [],
       totalAmount: data.amount,
       paidAmount: data.amount,
-      remainingBalanceDelta: isCustomerReceipt ? -data.amount : -data.amount,
+      remainingBalanceDelta: -data.amount,
       notes: data.notes,
       paymentMethod: data.paymentMethod,
     });
@@ -311,10 +353,11 @@ export default function App() {
           lang={lang}
           onBack={() => setSelectedPartyForLedger(null)}
           onOpenReceivePayment={() => {
-            setModalParty(selectedPartyForLedger);
-            setActiveModal(
-              selectedPartyForLedger.type === 'CUSTOMER' ? 'receipt' : 'voucher'
-            );
+            if (selectedPartyForLedger.type === 'CUSTOMER') {
+              handleOpenReceiptModal(selectedPartyForLedger);
+            } else {
+              handleOpenVoucherModal(selectedPartyForLedger);
+            }
           }}
           onOpenNewSale={() => {
             if (selectedPartyForLedger.type === 'CUSTOMER') {
@@ -341,15 +384,9 @@ export default function App() {
           profile={profile}
           lang={lang}
           onOpenNewSale={() => handleOpenSaleModal(null)}
-          onOpenReceivePayment={() => {
-            setModalParty(null);
-            setActiveModal('receipt');
-          }}
+          onOpenReceivePayment={() => handleOpenReceiptModal(null)}
           onOpenNewSupply={() => handleOpenSupplyModal(null)}
-          onOpenPayDistributor={() => {
-            setModalParty(null);
-            setActiveModal('voucher');
-          }}
+          onOpenPayDistributor={() => handleOpenVoucherModal(null)}
           onSelectTransaction={(tx) => {
             const p = store.getPartyById(tx.partyId);
             if (p) {
@@ -367,8 +404,11 @@ export default function App() {
           lang={lang}
           onSelectPartyLedger={(party) => setSelectedPartyForLedger(party)}
           onOpenReceivePaymentForParty={(party) => {
-            setModalParty(party);
-            setActiveModal(party.type === 'CUSTOMER' ? 'receipt' : 'voucher');
+            if (party.type === 'CUSTOMER') {
+              handleOpenReceiptModal(party);
+            } else {
+              handleOpenVoucherModal(party);
+            }
           }}
           onOpenNewSaleForParty={(party) => {
             if (party.type === 'CUSTOMER') {
@@ -468,7 +508,7 @@ export default function App() {
 
         {/* Modal: Invoice & Receipt PDF Preview */}
         {activeModal === 'invoice-pdf' && activeTxForPdf && modalParty && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingSpinner lang={lang} />}>
             <InvoicePdfModal
               key="modal-invoice-pdf"
               transaction={activeTxForPdf}
@@ -486,7 +526,7 @@ export default function App() {
 
         {/* Modal: Detailed Account Statement PDF */}
         {activeModal === 'statement-pdf' && selectedPartyForLedger && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingSpinner lang={lang} />}>
             <StatementPdfModal
               key="modal-statement-pdf"
               party={selectedPartyForLedger}
@@ -500,7 +540,7 @@ export default function App() {
 
         {/* Modal: Test on Phone / Mobile QR Pairing */}
         {activeModal === 'phone-pairing' && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingSpinner lang={lang} />}>
             <PhonePairingModal
               key="modal-phone-pairing"
               lang={lang}
@@ -512,7 +552,7 @@ export default function App() {
 
         {/* Modal: Real Store Setup Wizard */}
         {activeModal === 'store-setup' && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingSpinner lang={lang} />}>
             <StoreSetupWizardModal
               key="modal-store-setup"
               currentProfile={profile}
@@ -525,7 +565,7 @@ export default function App() {
 
         {/* Modal: Security Guard Licensing & Activation */}
         {activeModal === 'security-guard' && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingSpinner lang={lang} />}>
             <SecurityGuardModal
               key="modal-security-guard"
               profile={profile}
@@ -538,7 +578,7 @@ export default function App() {
 
         {/* Modal: Owner Master Key Generator */}
         {activeModal === 'admin-keygen' && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingSpinner lang={lang} />}>
             <AdminKeyGeneratorModal
               key="modal-admin-keygen"
               lang={lang}

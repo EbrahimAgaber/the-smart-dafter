@@ -98,7 +98,8 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -149,22 +150,52 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
           </div>
         </div>
 
+        {/* LAN IP / Custom Host Configuration */}
+        <div className="space-y-1.5 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+          <label className="block text-xs font-bold text-slate-700">
+            {isRtl ? 'تعديل عنوان الرابط للشبكة المحلية (LAN IP):' : 'Custom Host / Local Network (LAN IP):'}
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={customHost}
+              onChange={(e) => setCustomHost(e.target.value)}
+              placeholder="http://192.168.1.100:5173"
+              className="flex-1 bg-white text-slate-900 font-mono text-xs rounded-xl px-3 py-2 min-h-[44px] border border-slate-200 focus:outline-none focus:border-sky-500 shadow-2xs"
+            />
+            {customHost !== currentOrigin && (
+              <button
+                type="button"
+                onClick={() => setCustomHost(currentOrigin)}
+                className="min-h-[44px] px-3.5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold transition-colors shrink-0 flex items-center justify-center"
+              >
+                {isRtl ? 'استعادة' : 'Reset'}
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500">
+            {isRtl
+              ? 'إذا كنت تشغل التطبيق على الكمبيوتر، ضع IP جهازك المحلي (مثل 192.168.1.x) ليتمكن الهاتف من الاتصال عبر شبكة الـ Wi-Fi.'
+              : 'Enter your computer LAN IP address (e.g. 192.168.1.x) so your mobile phone can connect over Wi-Fi.'}
+          </p>
+        </div>
+
         {/* Link Copier & Actions */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 overflow-hidden">
             <span className="truncate flex-1 px-2 select-all">{activeUrl}</span>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold shrink-0 transition-colors"
+              className="min-h-[44px] flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold shrink-0 transition-colors"
             >
               {copied ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-green-600" />
-                  <span className="text-green-600">{isRtl ? 'تم النسخ!' : 'Copied!'}</span>
+                  <Check className="w-4 h-4 text-green-600" />
+                  <span className="text-green-600 font-bold">{isRtl ? 'تم النسخ!' : 'Copied!'}</span>
                 </>
               ) : (
                 <>
-                  <Copy className="w-3.5 h-3.5" />
+                  <Copy className="w-4 h-4" />
                   <span>{isRtl ? 'نسخ' : 'Copy'}</span>
                 </>
               )}
@@ -176,9 +207,9 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
               href={activeUrl}
               target="_blank"
               rel="noreferrer"
-              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all border border-slate-300"
+              className="flex-1 min-h-[44px] flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all border border-slate-300"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              <ExternalLink className="w-4 h-4" />
               <span>{isRtl ? 'فتح في علامة تبويب جديدة' : 'Open in New Tab'}</span>
             </a>
 
@@ -189,9 +220,9 @@ export const PhonePairingModal: React.FC<PhonePairingModalProps> = ({
                   onClose();
                   onOpenStoreSetup();
                 }}
-                className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold transition-all shadow-md"
+                className="min-h-[44px] flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold transition-all shadow-md"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-4 h-4" />
                 <span>{isRtl ? 'معالج إعداد المتجر الحقيقي' : 'Setup Real Store'}</span>
               </button>
             )}

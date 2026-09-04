@@ -19,7 +19,7 @@ import QRCode from 'qrcode';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
-import { exportElementToPdf, sharePdfFile } from '../utils/pdfGenerator';
+import { generateInvoicePdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 import { generateZatcaTlvQrString } from '../utils/zatca';
 
 interface InvoicePdfModalProps {
@@ -73,7 +73,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     try {
       const qrData = generateZatcaTlvQrString({
         sellerName: profile.name,
-        vatNumber: profile.vatNumber || '',
+        vatNumber: profile.taxNumber || '',
         timestamp: transaction.date,
         totalAmount: transaction.totalAmount,
         vatAmount: isVatApplied ? (transaction.taxAmount || 0) : 0,
@@ -87,48 +87,80 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   }, [profile, transaction, party, isVatApplied]);
 
-  // Background pre-generate PDF Blob so iOS user click gesture is preserved instantly!
+  // Precompute PDF Blob without pre-render timeout hacks
   useEffect(() => {
     let mounted = true;
-    const timer = setTimeout(async () => {
+    let activeUrl: string | null = null;
+
+    async function preparePdf() {
       try {
-        const b = await exportElementToPdf('invoice-render-target', pdfFileName, false);
-        if (mounted && b) {
-          setPdfBlob(b);
-          setPdfUrl(URL.createObjectURL(b));
+        const doc = await generateInvoicePdf({
+          profile,
+          transaction,
+          party,
+          zatcaQrDataUrl: zatcaQrUrl || undefined,
+          isVatApplied,
+          lang,
+        });
+        if (mounted) {
+          const blob = doc.output('blob');
+          setPdfBlob(blob);
+          activeUrl = URL.createObjectURL(blob);
+          setPdfUrl(activeUrl);
         }
       } catch (e) {
-        console.warn('Precomputing PDF failed:', e);
+        console.warn('Precomputing Invoice PDF failed:', e);
       }
-    }, 450);
+    }
+
+    preparePdf();
 
     return () => {
       mounted = false;
-      clearTimeout(timer);
+      if (activeUrl) {
+        URL.revokeObjectURL(activeUrl);
+      }
     };
-  }, [profile, transaction, party, zatcaQrUrl, isVatApplied]);
+  }, [profile, transaction, party, zatcaQrUrl, isVatApplied, lang]);
 
   const handleDownloadPdf = async () => {
     setIsGenerating(true);
-    await exportElementToPdf('invoice-render-target', pdfFileName, true);
-    setIsGenerating(false);
+    try {
+      const doc = await generateInvoicePdf({
+        profile,
+        transaction,
+        party,
+        zatcaQrDataUrl: zatcaQrUrl || undefined,
+        isVatApplied,
+        lang,
+      });
+      doc.save(pdfFileName);
+    } catch (err) {
+      console.error('Invoice PDF download error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleSharePdf = async () => {
     setIsGenerating(true);
     setShareFeedback(null);
     try {
-      const result = await sharePdfFile(
-        'invoice-render-target',
+      const doc = await generateInvoicePdf({
+        profile,
+        transaction,
+        party,
+        zatcaQrDataUrl: zatcaQrUrl || undefined,
+        isVatApplied,
+        lang,
+      });
+      const result = await shareOrDownloadPdf(
+        doc,
         pdfFileName,
-        `${docTitle} - #${transaction.receiptNumber}`,
-        pdfBlob
+        `${docTitle} - #${transaction.receiptNumber}`
       );
       if (result.success) {
-        if (result.url) {
-          setPdfUrl(result.url);
-          setShareFeedback(isRtl ? 'تم تجهيز ملف PDF بنجاح!' : 'PDF ready!');
-        }
+        setShareFeedback(isRtl ? 'تم تجهيز ومشاركة ملف PDF بنجاح!' : 'PDF ready and shared!');
       } else {
         alert(isRtl ? 'تعذر إنشاء ملف PDF. يرجى المحاولة مجدداً.' : 'Could not generate PDF. Please retry.');
       }

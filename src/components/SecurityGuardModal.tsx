@@ -82,7 +82,7 @@ export const SecurityGuardModal: React.FC<SecurityGuardModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-60 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 overflow-y-auto"
+      className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 md:p-6 overflow-y-auto"
     >
       <motion.div
         id="modal-security-guard-container"
@@ -122,7 +122,7 @@ export const SecurityGuardModal: React.FC<SecurityGuardModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-800 transition-colors"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>

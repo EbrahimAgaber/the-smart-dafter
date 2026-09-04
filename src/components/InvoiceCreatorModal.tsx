@@ -258,7 +258,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 48, scale: 0.98 }}
         transition={{ type: 'spring', damping: 28, stiffness: 340, mass: 0.8 }}
-        className="w-full max-w-lg bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto"
+        className="w-full max-w-lg bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl max-h-[92vh] overflow-y-auto pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))]"
       >
         {/* Modal Header */}
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
@@ -284,7 +284,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
 
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-800 p-1 transition-colors"
+            aria-label={isRtl ? 'إغلاق' : 'Close'}
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -418,32 +419,55 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRemoveItem(idx)}
-                        className="text-slate-400 hover:text-rose-400 p-1 transition-colors"
+                        aria-label={isRtl ? 'حذف الصنف' : 'Delete item'}
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors shrink-0"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     )}
                   </div>
 
                   {/* Qty, Unit Price, Subtotal */}
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
-                      <span className="text-xs text-slate-400 block mb-0.5">
+                      <span className="text-xs text-slate-400 block mb-0.5 font-medium">
                         {t.quantity}
                       </span>
-                      <input
-                        type="number"
-                        min="1"
-                        step="any"
-                        value={item.quantity}
-                        onChange={(e) =>
-                          handleItemChange(idx, 'quantity', parseFloat(e.target.value) || 0)
-                        }
-                        className="w-full bg-white text-slate-900 text-xs font-mono rounded-lg px-2 py-1 border border-slate-200 focus:outline-none focus:border-cyan-500"
-                      />
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleItemChange(idx, 'quantity', Math.max(1, (item.quantity || 1) - 1))
+                          }
+                          aria-label={isRtl ? 'إنقاص الكمية' : 'Decrease quantity'}
+                          className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-s-xl border border-e-0 border-slate-200 font-bold active:scale-95 transition-all text-sm"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          step="any"
+                          value={item.quantity}
+                          onChange={(e) =>
+                            handleItemChange(idx, 'quantity', parseFloat(e.target.value) || 0)
+                          }
+                          className="w-full bg-white text-slate-900 text-xs font-mono min-h-[44px] px-1 py-1 border border-slate-200 text-center focus:outline-none focus:border-cyan-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleItemChange(idx, 'quantity', (item.quantity || 0) + 1)
+                          }
+                          aria-label={isRtl ? 'زيادة الكمية' : 'Increase quantity'}
+                          className="min-w-[44px] min-h-[44px] flex items-center justify-center bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-e-xl border border-s-0 border-slate-200 font-bold active:scale-95 transition-all text-sm"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <div>
-                      <span className="text-xs text-slate-400 block mb-0.5">
+                      <span className="text-xs text-slate-400 block mb-0.5 font-medium">
                         {t.unitPrice}
                       </span>
                       <input
@@ -454,14 +478,14 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                         onChange={(e) =>
                           handleItemChange(idx, 'unitPrice', parseFloat(e.target.value) || 0)
                         }
-                        className="w-full bg-white text-slate-900 text-xs font-mono rounded-lg px-2 py-1 border border-slate-200 focus:outline-none focus:border-cyan-500"
+                        className="w-full bg-white text-slate-900 text-xs font-mono min-h-[44px] rounded-xl px-2.5 py-1 border border-slate-200 focus:outline-none focus:border-cyan-500"
                       />
                     </div>
                     <div>
-                      <span className="text-xs text-slate-400 block mb-0.5">
+                      <span className="text-xs text-slate-400 block mb-0.5 font-medium">
                         {t.subtotal}
                       </span>
-                      <div className="w-full bg-white text-green-600 text-xs font-bold font-mono rounded-lg px-2 py-1 border border-slate-200 text-end shadow-inner">
+                      <div className="w-full bg-white text-green-600 text-xs font-bold font-mono min-h-[44px] flex items-center justify-end rounded-xl px-3 py-1 border border-slate-200 shadow-inner">
                         {formatCurrency(item.subtotal, currency, lang)}
                       </div>
                     </div>
@@ -486,20 +510,43 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
               </div>
 
               {/* Discount Row */}
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-slate-600">{isRtl ? 'الخصم / الحسم:' : 'Discount:'}</span>
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="number"
-                    min="0"
-                    max={itemsSubtotal}
-                    step="any"
-                    value={discountInput}
-                    onChange={(e) => setDiscountInput(e.target.value)}
-                    placeholder="0"
-                    className="w-20 bg-white text-slate-900 text-xs font-mono font-bold text-end rounded-lg px-2 py-1 border border-slate-200"
-                  />
-                  <span className="text-[11px] text-slate-400 font-mono">{currency}</span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-600 font-medium">{isRtl ? 'الخصم / الحسم:' : 'Discount:'}</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max={itemsSubtotal}
+                      step="any"
+                      value={discountInput}
+                      onChange={(e) => setDiscountInput(e.target.value)}
+                      placeholder="0"
+                      className="w-24 bg-white text-slate-900 text-xs font-mono font-bold text-end rounded-xl px-2.5 py-2 min-h-[44px] border border-slate-200 focus:outline-none focus:border-cyan-500"
+                    />
+                    <span className="text-xs text-slate-400 font-mono">{currency}</span>
+                  </div>
+                </div>
+
+                {/* Quick Discount Chips */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] font-bold text-slate-400 me-1">
+                    {isRtl ? 'خصم سريع:' : 'Quick Discount:'}
+                  </span>
+                  {[0, 5, 10, 20, 50].map((disc) => (
+                    <button
+                      key={disc}
+                      type="button"
+                      onClick={() => setDiscountInput(disc.toString())}
+                      className={`min-h-[44px] min-w-[44px] px-3 py-2 rounded-xl text-xs font-mono font-bold border transition-colors flex items-center justify-center ${
+                        parseFloat(discountInput) === disc
+                          ? 'bg-cyan-100 text-cyan-900 border-cyan-400 shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-200 shadow-2xs'
+                      }`}
+                    >
+                      {disc === 0 ? (isRtl ? 'صفر' : '0') : `-${disc}`}
+                    </button>
+                  ))}
                 </div>
               </div>
 
@@ -544,25 +591,25 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                   {t.paidNow}
                 </label>
                 {/* Helper chips */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleSetPaidZero}
-                    className="text-xs px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/50"
+                    className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 flex items-center justify-center"
                   >
                     {t.payZero}
                   </button>
                   <button
                     type="button"
                     onClick={handleSetPaidHalf}
-                    className="text-xs px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/50"
+                    className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 flex items-center justify-center font-mono"
                   >
                     50%
                   </button>
                   <button
                     type="button"
                     onClick={handleSetPaidFull}
-                    className="text-xs px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/50"
+                    className="min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 flex items-center justify-center"
                   >
                     {t.payInFull}
                   </button>
@@ -577,7 +624,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                 step="any"
                 value={paidNowInput}
                 onChange={(e) => setPaidNowInput(e.target.value)}
-                className="w-full bg-white text-slate-900 font-mono text-sm font-bold rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 text-end shadow-2xs"
+                className="w-full bg-white text-slate-900 font-mono text-sm font-bold rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 text-end shadow-2xs min-h-[44px]"
               />
 
               {/* Quick POS Increment Buttons for Low-literacy Easy Tapping */}
@@ -590,7 +637,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                     key={inc}
                     type="button"
                     onClick={() => handleAddPaidIncrement(inc)}
-                    className="text-xs px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors"
+                    className="min-h-[44px] min-w-[44px] text-xs px-3 py-2 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors flex items-center justify-center"
                   >
                     +{inc}
                   </button>
@@ -601,14 +648,14 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             {/* Remaining Debt Highlight */}
             <div className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between shadow-2xs">
               <div>
-                <span className="text-xs text-rose-300 font-bold block">
+                <span className="text-xs text-rose-700 font-bold block">
                   {t.remainingDebtDelta}
                 </span>
                 <span className="text-xs text-slate-400">
                   {isRtl ? 'يُضاف إلى دفتر الحسابات' : 'Will be posted to ledger'}
                 </span>
               </div>
-              <div className="text-base font-black font-mono text-rose-400">
+              <div className="text-base font-black font-mono text-rose-600">
                 +{formatCurrency(remainingBalanceDelta, currency, lang)}
               </div>
             </div>
@@ -674,7 +721,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-750 text-slate-700 font-semibold text-xs transition-colors border border-slate-300/50 shadow-2xs"
+              className="flex-1 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors border border-slate-300/50 shadow-2xs min-h-[44px]"
             >
               {t.cancel}
             </button>

@@ -23,7 +23,6 @@ export default defineConfig(() => {
           manualChunks: {
             'vendor-react': ['react', 'react-dom'],
             'vendor-jspdf': ['jspdf'],
-            'vendor-html2canvas': ['html2canvas'],
             'vendor-icons': ['lucide-react', 'qrcode'],
             'vendor-motion': ['motion'],
           },

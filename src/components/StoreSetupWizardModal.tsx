@@ -110,7 +110,8 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
           {currentProfile.name && (
             <button
               onClick={onClose}
-              className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
+              aria-label={isRtl ? 'إغلاق' : 'Close'}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -175,10 +176,10 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
                     key={c.code}
                     type="button"
                     onClick={() => setCurrency(c.code)}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold text-start border transition-all flex items-center justify-between ${
+                    className={`min-h-[44px] py-2.5 px-3.5 rounded-xl text-xs font-bold text-start border transition-all flex items-center justify-between ${
                       currency === c.code
-                        ? 'bg-sky-500/20 text-sky-300 border-sky-500 shadow-xs'
-                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                        ? 'bg-sky-50 text-sky-800 border-sky-600 shadow-xs'
+                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
                     }`}
                   >
                     <span>{isRtl ? c.labelAr : c.labelEn}</span>
@@ -191,7 +192,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
             <button
               type="button"
               onClick={() => setStep(2)}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md mt-2"
+              className="w-full min-h-[44px] flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-500 hover:bg-sky-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md mt-2"
             >
               <span>{isRtl ? 'المتابعة للخطوة التالية' : 'Continue to Step 2'}</span>
               {isRtl ? <ArrowLeft className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
@@ -228,13 +229,33 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
               />
             </div>
 
-
+            {/* Clean Ledger Option (Fresh Start) */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl shadow-2xs">
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={freshStart}
+                  onChange={(e) => setFreshStart(e.target.checked)}
+                  className="w-5 h-5 mt-0.5 rounded text-cyan-600 border-slate-300 focus:ring-cyan-500 shrink-0"
+                />
+                <div className="flex-1">
+                  <span className="text-xs font-bold text-slate-800 block">
+                    {isRtl ? 'بدء دفتر جديد ونظيف (مسح بيانات العرض التجريبية)' : 'Fresh Start (Clear demo seed data)'}
+                  </span>
+                  <span className="text-[11px] text-slate-500 mt-0.5 block">
+                    {isRtl
+                      ? 'تفعيل هذا الخيار سيقوم بمسح كافة المعاملات والعملاء التجريبيين لبدء دفتر حسابات فارغ لمتجرك.'
+                      : 'Checking this will wipe all demo transactions and parties to start with a blank ledger.'}
+                  </span>
+                </div>
+              </label>
+            </div>
 
             <div className="flex items-center gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setStep(1)}
-                className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300 transition-colors"
+                className="min-h-[44px] py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold border border-slate-300 transition-colors"
               >
                 {isRtl ? 'السابق' : 'Back'}
               </button>
@@ -242,7 +263,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
               <button
                 type="button"
                 onClick={handleFinish}
-                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md"
+                className="flex-1 min-h-[44px] flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-98 text-slate-950 text-xs font-bold transition-all shadow-md"
               >
                 <FileCheck2 className="w-4 h-4" />
                 <span>{isRtl ? 'حفظ والبدء في المتجر' : 'Save & Launch Store'}</span>

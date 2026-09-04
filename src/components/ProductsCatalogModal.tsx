@@ -49,6 +49,8 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
   // Barcode Scanner State
   const [isScanning, setIsScanning] = useState(false);
   const [scanTarget, setScanTarget] = useState<'search' | 'form'>('search');
+  const [hasBarcodeDetector, setHasBarcodeDetector] = useState<boolean>(true);
+  const [manualBarcodeInput, setManualBarcodeInput] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -56,6 +58,9 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
     let animFrame: number | null = null;
 
     if (isScanning) {
+      const detectorSupported = 'BarcodeDetector' in window;
+      setHasBarcodeDetector(detectorSupported);
+
       navigator.mediaDevices
         ?.getUserMedia({ video: { facingMode: 'environment' } })
         .then((s) => {
@@ -64,7 +69,7 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
             videoRef.current.srcObject = s;
             videoRef.current.play();
 
-            if ('BarcodeDetector' in window) {
+            if (detectorSupported) {
               // @ts-ignore
               const detector = new (window as any).BarcodeDetector({
                 formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code'],
@@ -313,7 +318,8 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
               </h2>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-800 transition-colors"
+                aria-label={isRtl ? 'إغلاق' : 'Close'}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -428,8 +434,8 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
 
     {/* Live Camera Barcode Scanner Modal */}
     {isScanning && (
-      <div className="fixed inset-0 z-60 bg-black/90 flex flex-col items-center justify-center p-4">
-        <div className="w-full max-w-sm bg-slate-900 rounded-3xl p-4 space-y-4 border border-slate-800 text-center shadow-2xl">
+      <div className="fixed inset-0 z-[60] bg-black/90 flex flex-col items-center justify-center p-4">
+        <div className="w-full max-w-sm bg-slate-900 rounded-3xl p-5 space-y-4 border border-slate-800 text-center shadow-2xl">
           <div className="flex items-center justify-between text-white border-b border-slate-800 pb-2">
             <span className="text-xs font-bold flex items-center gap-1.5">
               <Camera className="w-4 h-4 text-cyan-400" />
@@ -437,7 +443,8 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
             </span>
             <button
               onClick={() => setIsScanning(false)}
-              className="p-1 text-slate-400 hover:text-white"
+              aria-label={isRtl ? 'إغلاق' : 'Close'}
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-white transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -459,9 +466,51 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
               : 'Point your camera at the product barcode'}
           </p>
 
+          {/* BarcodeDetector Missing Fallback UI */}
+          {!hasBarcodeDetector && (
+            <div className="p-3 bg-amber-500/15 border border-amber-500/30 rounded-2xl text-start space-y-2">
+              <p className="text-xs text-amber-300 font-bold">
+                {isRtl
+                  ? 'المتصفح لا يدعم التعرف التلقائي على الباركود (BarcodeDetector غير متوفر)'
+                  : 'Automatic barcode detection is not supported in this browser'}
+              </p>
+              <p className="text-[11px] text-slate-300">
+                {isRtl
+                  ? 'يمكنك إدخال رمز أو رقم الباركود يدويًا هنا للمتابعة فورا:'
+                  : 'You can enter the barcode number manually below to continue:'}
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={manualBarcodeInput}
+                  onChange={(e) => setManualBarcodeInput(e.target.value)}
+                  placeholder={isRtl ? 'أدخل رقم الباركود...' : 'Enter barcode digits...'}
+                  className="flex-1 bg-slate-800 text-white font-mono text-xs rounded-xl px-3 py-2 min-h-[44px] border border-slate-700 focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (manualBarcodeInput.trim()) {
+                      if (scanTarget === 'form') {
+                        setBarcode(manualBarcodeInput.trim());
+                      } else {
+                        setSearch(manualBarcodeInput.trim());
+                      }
+                      setIsScanning(false);
+                      setManualBarcodeInput('');
+                    }
+                  }}
+                  className="min-h-[44px] px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition-colors shrink-0 flex items-center justify-center"
+                >
+                  {isRtl ? 'تطبيق' : 'Apply'}
+                </button>
+              </div>
+            </div>
+          )}
+
           <button
             onClick={() => setIsScanning(false)}
-            className="w-full py-2.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold hover:bg-slate-700 transition-colors"
+            className="w-full min-h-[44px] py-2.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold hover:bg-slate-700 transition-colors flex items-center justify-center"
           >
             {isRtl ? 'إلغاء' : 'Cancel'}
           </button>

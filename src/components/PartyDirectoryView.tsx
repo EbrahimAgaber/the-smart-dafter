@@ -256,46 +256,47 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={t.searchPlaceholder}
-              className="w-full bg-white text-slate-900 placeholder-slate-400 text-xs rounded-xl ps-9 pe-3 py-2.5 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 shadow-2xs"
+              className="w-full bg-white text-slate-900 placeholder-slate-400 text-xs rounded-xl ps-9 pe-11 py-2.5 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 shadow-2xs"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-800"
+                aria-label={isRtl ? 'مسح البحث' : 'Clear search'}
+                className="absolute end-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-800 transition-colors"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
 
           {/* Filter Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
             <button
               onClick={() => setBalanceFilter('all')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+              className={`min-h-[44px] px-3.5 py-2.5 rounded-xl font-medium transition-all inline-flex items-center justify-center shrink-0 ${
                 balanceFilter === 'all'
                   ? 'bg-slate-100 text-slate-900 font-bold border border-slate-300 shadow-2xs'
-                  : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-800 border border-slate-200/80'
+                  : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800 border border-slate-200/80'
               }`}
             >
               {t.allBalances} ({parties.filter((p) => p.type === activeSegment).length})
             </button>
             <button
               onClick={() => setBalanceFilter('debtors')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+              className={`min-h-[44px] px-3.5 py-2.5 rounded-xl font-medium transition-all inline-flex items-center justify-center shrink-0 ${
                 balanceFilter === 'debtors'
-                  ? 'bg-rose-50 text-rose-300 font-bold border border-rose-200/40 shadow-2xs'
-                  : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-800 border border-slate-200/80'
+                  ? 'bg-rose-50 text-rose-700 font-bold border border-rose-200 shadow-2xs'
+                  : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800 border border-slate-200/80'
               }`}
             >
               {t.onlyDebtors}
             </button>
             <button
               onClick={() => setBalanceFilter('settled')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+              className={`min-h-[44px] px-3.5 py-2.5 rounded-xl font-medium transition-all inline-flex items-center justify-center shrink-0 ${
                 balanceFilter === 'settled'
-                  ? 'bg-green-50 text-green-700 font-bold border border-green-200/40 shadow-2xs'
-                  : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-800 border border-slate-200/80'
+                  ? 'bg-green-50 text-green-700 font-bold border border-green-200 shadow-2xs'
+                  : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800 border border-slate-200/80'
               }`}
             >
               {t.onlyZeroBalance}
@@ -413,9 +414,9 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                         e.stopPropagation();
                         onSelectPartyLedger(party);
                       }}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 shadow-2xs transition-colors"
+                      className="flex items-center gap-1 min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 shadow-2xs transition-colors"
                     >
-                      <FileSpreadsheet className="w-3 h-3 text-green-600" />
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-green-600" />
                       <span>{t.accountStatement}</span>
                     </button>
 
@@ -425,39 +426,41 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                         e.stopPropagation();
                         onOpenReceivePaymentForParty(party);
                       }}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 shadow-2xs transition-colors"
+                      className="flex items-center gap-1 min-h-[44px] px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-300/50 shadow-2xs transition-colors"
                     >
                       {isCustomer ? (
                         <>
-                          <ArrowDownLeft className="w-3 h-3 text-sky-600" />
+                          <ArrowDownLeft className="w-3.5 h-3.5 text-sky-600" />
                           <span>{t.receivePayment}</span>
                         </>
                       ) : (
                         <>
-                          <ArrowUpRight className="w-3 h-3 text-purple-600" />
+                          <ArrowUpRight className="w-3.5 h-3.5 text-purple-600" />
                           <span>{t.payDistributor}</span>
                         </>
                       )}
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     {/* WhatsApp Quick Message */}
                     <button
                       onClick={(e) => handleWhatsAppClick(party, e)}
                       title={t.shareWhatsApp}
-                      className="p-1.5 rounded-lg bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 shadow-2xs transition-colors"
+                      aria-label={t.shareWhatsApp}
+                      className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 shadow-2xs transition-colors"
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                      <MessageSquare className="w-4 h-4" />
                     </button>
 
                     {/* Edit Party Info */}
                     <button
                       onClick={(e) => handleOpenEdit(party, e)}
                       title={t.editParty}
-                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-300/50 shadow-2xs transition-colors"
+                      aria-label={t.editParty}
+                      className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 border border-slate-300/50 shadow-2xs transition-colors"
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className="w-4 h-4" />
                     </button>
 
                     {/* Delete Party */}
@@ -475,9 +478,10 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                         onDeleteParty(party.id);
                       }}
                       title={t.deleteParty}
-                      className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-300/50 shadow-2xs transition-colors"
+                      aria-label={t.deleteParty}
+                      className="w-11 h-11 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-300/50 shadow-2xs transition-colors"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -495,7 +499,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
         >
           <div
             id="modal-add-party-container"
-            className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl animate-in slide-in-from-bottom"
+            className="w-full max-w-md bg-white rounded-t-3xl md:rounded-3xl border border-slate-200 p-5 space-y-4 shadow-2xl animate-in slide-in-from-bottom pb-[max(1.25rem,calc(env(safe-area-inset-bottom,0px)+1rem))]"
           >
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
               <h2 className="text-sm font-bold text-slate-900">
@@ -507,7 +511,8 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
               </h2>
               <button
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-800 p-1 transition-colors"
+                aria-label={isRtl ? 'إغلاق' : 'Close'}
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>

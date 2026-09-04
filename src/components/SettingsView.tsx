@@ -223,7 +223,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
 
       {importStatus && (
-        <div className="p-3 rounded-2xl bg-sky-50/80 border border-sky-200/60 text-sky-300 text-xs flex items-center gap-2 shadow-2xs">
+        <div className="p-3 rounded-2xl bg-sky-50/80 border border-sky-200/60 text-sky-800 text-xs flex items-center gap-2 shadow-2xs">
           <AlertCircle className="w-4 h-4 text-sky-600" />
           <span>{importStatus}</span>
         </div>
@@ -326,7 +326,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-750 text-slate-800 text-xs font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+                  className="px-3 py-1.5 min-h-[44px] rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold border border-slate-300/60 shadow-2xs transition-colors flex items-center justify-center"
                 >
                   {t.uploadLogo}
                 </button>
@@ -404,19 +404,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="w-14 bg-white text-slate-900 text-xs text-center font-bold font-mono rounded-lg px-2 py-1 border border-slate-200"
               />
               <span className="text-xs font-bold text-slate-500">%</span>
-              <button
-                type="button"
-                onClick={() => setIsVatEnabled(!isVatEnabled)}
-                className={`w-11 h-6 rounded-full p-0.5 transition-colors ${
-                  isVatEnabled ? 'bg-cyan-600' : 'bg-slate-300'
-                }`}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
-                    isVatEnabled ? (isRtl ? '-translate-x-5' : 'translate-x-5') : ''
+              <div dir="ltr" className="inline-flex items-center min-w-[44px] min-h-[44px] justify-center">
+                <button
+                  type="button"
+                  dir="ltr"
+                  onClick={() => setIsVatEnabled(!isVatEnabled)}
+                  aria-label={isRtl ? 'تفعيل ضريبة القيمة المضافة' : 'Toggle VAT'}
+                  className={`w-11 h-6 rounded-full p-0.5 transition-colors ${
+                    isVatEnabled ? 'bg-cyan-600' : 'bg-slate-300'
                   }`}
-                />
-              </button>
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                      isVatEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
           </div>
 
