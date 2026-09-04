@@ -1,97 +1,185 @@
-# Project: The Smart Dafter (الدفتر الذكي) Production-Ready QA & Bug-Fix
+# Project: Coffee POS & Kitchen Display System (KDS)
 
 ## Architecture
-- **Framework**: React 19 + TypeScript + Vite + Tailwind CSS (v4)
-- **Data Layer**: In-memory store backed by localStorage & IndexedDB (`idbStorage.ts`, `sqliteStorage.ts`)
-- **PDF Engine**: Native jsPDF direct vector drawing API with Arabic RTL font embedding, contextual shaping, BiDi token preservation, ZATCA TLV QR code embedding, and mobile Web Share / desktop download
-- **Design System**: Mobile-first PWA with desktop mobile frame chassis, bidirectional RTL/LTR support, safe-area inset adaptation, and WCAG AA compliance
+- **Framework**: React 19 + TypeScript + Vite + Tailwind CSS v4 + Lucide Icons + Motion
+- **Target Form Factor**: 100% Mobile-first (5.5"+ smartphones, phablets, and tablets) with role-locked stations
+- **Realtime Sync**: Dual-layer `IRealtimeTransport`:
+  - Production: Supabase Realtime (Broadcast channels for <100ms events + Postgres Changes CDC for durable state)
+  - Demo/Offline: Native browser `BroadcastChannel` cross-tab sync (<50ms) + localStorage persistence
+- **Station Roles**:
+  1. **Drive-Thru / Order Taker**: Rapid customized ordering with plate/token tagging (<5 taps)
+  2. **Kitchen Display System (KDS)**: Dark-mode Kanban, live elapsed timers, color urgency (<3m Green, 3-5m Yellow, >5m Red), Web Audio chime, single-tap bump
+  3. **Cashier Station**: Auto-refreshing Ready queue, quick-cash calculator (10, 20, 50, 100 SAR, <3 taps), Card/Mada, split payments, customer credit (آجل)
+  4. **Owner Management**: Sales velocity, shift reports (X/Z Reports), recipe-based COGS profit margins, raw stock alerts, PIN governance
+- **Receipt & Printing Engine**:
+  - 58mm & 80mm ESC/POS raster generation with Arabic glyph shaping via `arabicShaper.ts`
+  - ZATCA Phase 1 & 2 TLV Base64 QR code via `zatca.ts`
+  - WhatsApp direct link (`wa.me/<phone>?text=...`) and Web Share API with PDF via `arabicFont.ts`
+- **Inventory & Accounting**:
+  - Recipe-based Bill of Materials (BOM) with automatic stock depletion on `COMPLETED` orders
+  - Customer credit ledger (آجل) with regional neighborhood classification (e.g. حي الياسمين, حي النرجس) and credit limit enforcement
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | ZATCA QR `taxNumber` | Fix `profile.vatNumber` to `profile.taxNumber` in `InvoicePdfModal.tsx` | M1 | Survey / Bug 1 |
-| 2 | App remainingBalanceDelta | Replace redundant ternary in `App.tsx:181` with `-data.amount` | M1 | Survey / Bug 2 |
-| 3 | Date locale `ar-SA` | Fix `formatDate` in `src/utils/formatters.ts` to use `'ar-SA'` for Arabic | M1 | Survey / Bug 3 |
-| 4 | IndexedDB async hydration | Add observer/subscriber pattern to `sqliteStorage.ts` to notify `App.tsx` on IDB load | M1 | Survey / Bug 4 |
-| 5 | License enforcement gap | Enforce `checkCanCreateInvoice()` on receipt and voucher creation in `App.tsx` | M1 | Survey / Bug 5 |
-| 6 | Object URL leak cleanup | Add `URL.revokeObjectURL()` cleanup in `useEffect` in PDF modals | M1 | Survey / Bug 6 |
-| 7 | Secret exposure obfuscation | Externalize salt, SHA-256 hash check for admin PINs, remove hardcoded secret strings | M1 | Survey / Bug 7 |
-| 8 | Native jsPDF engine | Direct vector drawing replacing `html2canvas` without DOM dependency | M2 | Survey / R2 |
-| 9 | Arabic RTL cursive shaping | Contextual glyph joining and number-preserving BiDi in jsPDF via `arabicShaper.ts` | M2 | Survey / R2 |
-| 10 | Arabic font embedding | Lazy-loaded TrueType Arabic font registered with jsPDF Identity-H | M2 | Survey / R2 |
-| 11 | Intelligent multi-page layout | Atomic coordinate pagination preventing row/text slicing across pages (Bug 8) | M2 | Survey / Bug 8 |
-| 12 | Repeated table headers | Re-draw table headers at top of subsequent pages on multi-page statements | M2 | Survey / R2 |
-| 13 | Direct ZATCA QR embedding | Render TLV Phase 1/2 QR directly into jsPDF canvas vector space | M2 | Survey / R2 |
-| 14 | Zero-timeout PDF generation | Eliminate 450ms `setTimeout` hacks in PDF modals | M2 | Survey / R2 |
-| 15 | Web Share & desktop download | Native mobile `navigator.share` with File and desktop `doc.save()` fallback | M2 | Survey / R2 |
-| 16 | Safe area insets | Add `env(safe-area-inset-bottom)` to all bottom sheets and mobile modals | M3 | Survey / R3 |
-| 17 | 44px touch targets | Enlarge 27+ small buttons (void button, chips, close icons, action buttons) to >=44px | M3 | Survey / R3 |
-| 18 | WCAG AA color contrast | Replace low contrast `text-*-300` on `bg-*-50` with high contrast `text-*-700` | M3 | Survey / R3 |
-| 19 | Tailwind utility classes | Fix invalid classes (`hover:bg-slate-750`, `py-0.2`, `z-60`, `z-70`) | M3 | Survey / R3 |
-| 20 | Dead UI elements | Implement `freshStart` toggle in StoreSetupWizard, date filter in StatementPdfModal | M3 | Survey / R3 |
-| 21 | RTL switch mirroring | Fix toggle knob inversion in `SettingsView.tsx` by wrapping in `dir="ltr"` | M3 | Survey / R3 |
-| 22 | PWA theme consistency | Update `manifest.json` theme and background colors to `#F8FAFC` | M3 | Survey / R3 |
-| 23 | Modal loading suspense | Replace `<Suspense fallback={null}>` with animated spinner | M3 | Survey / R3 |
-| 24 | Invoice calculations | Subtotal, discount capped at subtotal, VAT 2-decimal rounding, total computation | M4 | Survey / R4 |
-| 25 | Balance reconciliation | Positive debt convention for customer receivables and distributor payables | M4 | Survey / R4 |
-| 26 | Dashboard metrics | `totalOwedToMe`, `totalIOwe`, `cashCollectedToday`, `netWorkingCapital` | M4 | Survey / R4 |
-| 27 | Transaction voiding | Reversal of transactions updating running balance | M4 | Survey / R4 |
-| 28 | Comprehensive verification suite | Automated test script verifying all acceptance criteria, compilation, and build | E2E | Verification |
+| 1 | S1-F01 Fast Catalog Grid | Swipeable category pills (Hot, Cold, Drip, Tea, Pastry) with visual cards | M2 | Survey / S1 |
+| 2 | S1-F02 Modifier Modal | Sizes (S/M/L), milk (Oat/Almond/Whole), sweet (0-150%), temp, extra shots, syrups | M2 | Survey / S1 |
+| 3 | S1-F03 Tagging System | Saudi plate number, vehicle color/model, buzzer/pager token, customer name | M2 | Survey / S1 |
+| 4 | S1-F04 Rapid Dispatch | Sub-5 taps workflow for 2-item customized drive-thru order | M2 | Survey / S1 |
+| 5 | S2-F01 KDS Dark Kanban | Glare-free dark theme (`#0F172A`), chronological ticket order | M2 | Survey / S2 |
+| 6 | S2-F02 Live Urgency Timers | Elapsed MM:SS stopwatch: Green <3m, Yellow 3-5m, Red >5m pulsating | M2 | Survey / S2 |
+| 7 | S2-F03 Modifier Visual Hierarchy | High-contrast quantity counter, colored modifier chips, callout barista notes | M2 | Survey / S2 |
+| 8 | S2-F04 Audio Chime Synth | Web Audio API 3-tone ascending chime (zero external audio file dependency) | M2 | Survey / S2 |
+| 9 | S2-F05 Single-Tap Bump | One-tap transition from `IN_PREPARATION` to `READY_FOR_PICKUP` | M2 | Survey / S2 |
+| 10 | S2-F06 Recall/Undo Drawer | 60-second undo drawer to restore bumped orders to prep queue | M2 | Survey / S2 |
+| 11 | S3-F01 Auto Ready Queue | Auto-refreshing queue of orders ready for pickup with plate/token badge | M3 | Survey / S3 |
+| 12 | S3-F02 Quick-Cash Calculator | Denomination buttons (10, 20, 50, 100, 200, 500 SAR) + exact change in <3 taps | M3 | Survey / S3 |
+| 13 | S3-F03 Payment Methods | Cash, Card/Mada, Split payment (Cash+Mada), and Customer Debt (آجل) | M3 | Survey / S3 |
+| 14 | S3-F04 Rapid Checkout | 3-tap checkout sequence for cash settlements | M3 | Survey / S3 |
+| 15 | S4-F01 Live Sales Velocity | Gross revenue, order count, AOV, orders/hour, payment breakdown | M4 | Survey / S4 |
+| 16 | S4-F02 Shift Audits X/Z Reports | Non-resetting X-Report and final shift closure Z-Report with cash reconciliation | M4 | Survey / S4 |
+| 17 | S4-F03 Recipe COGS & Margins | Real-time ingredient cost calculation and gross margin per item | M4 | Survey / S4 |
+| 18 | S4-F04 Raw Stock Alert Center | Real-time ingredient levels, low-stock threshold warnings, reorder suggestions | M4 | Survey / S4 |
+| 19 | S4-F05 Master PIN Governance | 4-digit PIN authentication protecting Owner station and sensitive overrides | M1 | Survey / S4 |
+| 20 | Role Isolation & Persistence | Station locking to device, URL parameter routing, inactivity auto-lock | M1 | Survey / R1 |
+| 21 | State Machine Engine | Deterministic transitions: NEW -> PREP -> READY -> COMPLETED / VOIDED | M1 | Survey / R2 |
+| 22 | Dual-Layer Realtime Transport | Sub-second sync via Supabase Realtime + fallback BroadcastChannel engine | M1 | Survey / R1 |
+| 23 | ESC/POS 58mm Thermal Print | Raw byte / canvas raster generation for 58mm mobile thermal printers | M3 | Survey / R3 |
+| 24 | ESC/POS 80mm Thermal Print | 80mm thermal receipt format with Arabic shaping and itemized table | M3 | Survey / R3 |
+| 25 | Arabic Glyph Shaping | Contextual Arabic letter joining & BiDi tokenization via `arabicShaper.ts` | M3 | Survey / R3 |
+| 26 | ZATCA TLV Base64 QR Code | Saudi Phase 1 & 2 compliant QR code generation via `zatca.ts` | M3 | Survey / R3 |
+| 27 | WhatsApp Direct Receipt | Instant chat link `wa.me/<phone>?text=...` with formatted order summary | M3 | Survey / R3 |
+| 28 | Mobile Web Share PDF | Native share sheet with PDF receipt attachment via `arabicFont.ts` | M3 | Survey / R3 |
+| 29 | Customer Debt Directory | Customer management with regional neighborhood classification (حي الياسمين...) | M4 | Survey / R4 |
+| 30 | Charge to Debt Checkout | Real-time balance increase with credit limit validation | M4 | Survey / R4 |
+| 31 | Regional Receivables Filter | Filter accounts receivable and delivery routes by neighborhood | M4 | Survey / R4 |
+| 32 | Recipe BOM Mapping | Relational ingredient mapping per menu item and size | M4 | Survey / R5 |
+| 33 | Atomic Stock Depletion | Automatic deduction of raw ingredients upon order reaching `COMPLETED` | M4 | Survey / R5 |
+| 34 | Stock Reversal on Void | Automatic ingredient and balance restoration upon order `VOIDED` | M4 | Survey / R5 |
+| 35 | Distributor Reorder Advice | Automatic purchase order suggestions for depleted ingredients | M4 | Survey / R5 |
+| 36 | Mobile Responsive Shell | 5.5"+ responsive mobile chassis with safe area insets and zero horizontal scroll | M1 | Survey / UX |
+| 37 | E2E Test Suite (Tiers 1-4) | Comprehensive test suite covering all features, boundaries, pairs, scenarios | E2E | Dual Track |
+| 38 | Adversarial Coverage Hardening | Tier 5 adversarial stress testing and concurrency simulation | M5 | Dual Track |
+| 39 | Forensic Integrity Verification | Systematic static, runtime, and anti-mock integrity verification | M5 | Audit |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Core Bug Fixes & Security Hardening | Bugs 1–7: ZATCA taxNumber, App ternary, formatters ar-SA, IDB hydration, license check, Object URL cleanup, secret obfuscation | none | DONE |
-| M2 | Native jsPDF Engine Rewrite | Bug 8 & R2: arabicShaper.ts, arabicFont.ts, pdfGenerator.ts rewrite, remove html2canvas, modal integration | M1 | DONE |
-| M3 | UX/UI Audit & Screen Remediation | R3: Safe areas, >=44px touch targets, WCAG AA contrast, Tailwind fixes, dead UI flows, RTL toggle | M1 | DONE |
-| M4 | Financial Math & Verification Suite | R4 & Verification: Math validation, automated acceptance test script, full build test | M1, M2, M3 | DONE |
-| M5 | Final E2E Test Pass & Victory Audit | 100% test pass, clean tsc --noEmit, clean npm run build, forensic audit veto check | M1, M2, M3, M4 | DONE |
+| E2E | E2E Test Suite Infrastructure & Test Cases | Test runner, Tiers 1-4 test cases (Feature, Boundary, Pairwise, Real-World), TEST_READY.md | none | DONE |
+| M1 | Core Scaffolding, Models, Realtime Transport & Role Isolation | Project scaffold in `coffee-pos`, types, state machine, IRealtimeTransport, station routing & PIN lock | none | DONE |
+| M2 | Drive-Thru Ordering & Kitchen Display System (KDS) | Fast catalog (<5 taps), modifier modal, plate tagging, dark KDS Kanban, timers, color urgency, audio chime, bump to ready | M1 | DONE |
+| M3 | Cashier Quick-Checkout, ESC/POS Printing & Digital Receipts | Auto Ready queue, quick-cash (<3 taps), Card/Mada/Split, 58/80mm ESC/POS with Arabic & ZATCA QR, WhatsApp & Web Share | M1, M2 | IN_PROGRESS |
+| M4 | Customer Debt (آجل), Regional Ledger & Recipe BOM Inventory | Customer regional directory, credit limit validation, recipe BOM mapping, atomic stock depletion on complete, X/Z reports | M1, M2, M3 | PLANNED |
+| M5 | 100% E2E Pass, Adversarial Hardening (Tier 5) & Forensic Audit | Full test pass against TEST_READY.md, concurrency stress, adversarial tests, forensic integrity veto check | M1, M2, M3, M4, E2E | PLANNED |
 
 ## Interface Contracts
 
-### sqliteStorage.ts ↔ App.tsx (Hydration Notification)
+### IRealtimeTransport
 ```typescript
-export interface LedgerStoreSubscriber {
-  (): void;
+export type RealtimeEventType = 
+  | 'ORDER_CREATED'
+  | 'ORDER_STATUS_CHANGED'
+  | 'ORDER_BUMPED'
+  | 'ORDER_COMPLETED'
+  | 'ORDER_CANCELLED'
+  | 'STOCK_UPDATED'
+  | 'CUSTOMER_CREDIT_UPDATED';
+
+export interface RealtimeEnvelope<T = any> {
+  id: string;
+  type: RealtimeEventType;
+  timestamp: string;
+  stationId: string;
+  payload: T;
+  syncSource: 'supabase' | 'broadcast_channel' | 'local_memory';
 }
-// SQLiteLedgerStore methods:
-subscribe(callback: LedgerStoreSubscriber): () => void;
+
+export interface IRealtimeTransport {
+  publish<T>(event: Omit<RealtimeEnvelope<T>, 'id' | 'timestamp' | 'syncSource'>): Promise<void>;
+  subscribe<T>(eventType: RealtimeEventType, handler: (event: RealtimeEnvelope<T>) => void): () => void;
+  getTransportName(): 'supabase' | 'broadcast_channel' | 'local_memory';
+}
 ```
 
-### licenseManager.ts (Secret Obfuscation)
+### Order State Transitions
 ```typescript
-// Admin PIN hash verification using Web Crypto SHA-256:
-export async function verifyAdminPin(enteredPin: string): Promise<boolean>;
-// Salt retrieval with fallback:
-export function getSecretSalt(): string;
+export type OrderStatus = 'NEW_ORDER' | 'IN_PREPARATION' | 'READY_FOR_PICKUP' | 'COMPLETED' | 'VOIDED';
+
+export function canTransitionOrder(current: OrderStatus, next: OrderStatus): boolean {
+  const allowed: Record<OrderStatus, OrderStatus[]> = {
+    NEW_ORDER: ['IN_PREPARATION', 'VOIDED'],
+    IN_PREPARATION: ['READY_FOR_PICKUP', 'VOIDED'],
+    READY_FOR_PICKUP: ['COMPLETED', 'IN_PREPARATION', 'VOIDED'],
+    COMPLETED: ['VOIDED'],
+    VOIDED: []
+  };
+  return allowed[current].includes(next);
+}
 ```
 
-### pdfGenerator.ts (Native jsPDF API)
+### Recipe BOM Depletion
 ```typescript
-export interface GenerateInvoicePdfOptions {
-  profile: BusinessProfile;
-  transaction: Transaction;
-  party: Party;
-  zatcaQrDataUrl?: string;
-  isVatApplied?: boolean;
+export interface RecipeItem {
+  ingredientId: string;
+  quantityRequired: number; // e.g., 18 (grams), 150 (ml), 1 (piece)
 }
 
-export interface GenerateStatementPdfOptions {
-  profile: BusinessProfile;
-  party: Party;
-  transactions: Transaction[];
-  startDate?: string;
-  endDate?: string;
+export interface DepletionResult {
+  ingredientId: string;
+  previousStock: number;
+  newStock: number;
+  depletedQuantity: number;
+  isLowStock: boolean;
 }
-
-export async function generateInvoicePdf(options: GenerateInvoicePdfOptions): Promise<jsPDF>;
-export async function generateStatementPdf(options: GenerateStatementPdfOptions): Promise<jsPDF>;
-export async function shareOrDownloadPdf(doc: jsPDF, fileName: string, title?: string): Promise<boolean>;
 ```
 
 ## Code Layout
-- `src/components/`: UI views and modals (all owned per milestone scope)
-- `src/db/`: Storage and database models (`sqliteStorage.ts`, `idbStorage.ts`)
-- `src/services/`: Core services (PDF generation `pdfGenerator.ts`, etc.)
-- `src/utils/`: Utilities (`formatters.ts`, `licenseManager.ts`, `arabicShaper.ts`, `fonts/`)
-- `scripts/`: Verification runner (`scripts/verify-dafter.cjs`)
+`c:\Users\bin-g\OneDrive\سطح المكتب\book\the-smart-dafter\coffee-pos/`
+```
+coffee-pos/
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+├── index.html
+├── src/
+│   ├── types.ts                    # Universal domain types (Order, Item, Station, Customer, Recipe)
+│   ├── state/
+│   │   ├── orderStateMachine.ts    # Formal deterministic state transitions
+│   │   ├── store.ts                # In-memory reactive state with persistence
+│   │   └── mockData.ts             # Initial coffee menu, recipes, ingredients, customers
+│   ├── realtime/
+│   │   ├── transport.ts            # IRealtimeTransport interface
+│   │   ├── supabaseTransport.ts    # Supabase Realtime implementation
+│   │   └── broadcastTransport.ts   # Native BroadcastChannel cross-tab implementation
+│   ├── stations/
+│   │   ├── DriveThruStation.tsx    # Station 1: Fast catalog, modifiers, car plate (<5 taps)
+│   │   ├── KdsStation.tsx          # Station 2: Dark Kanban, timers, color urgency, chime, bump
+│   │   ├── CashierStation.tsx      # Station 3: Ready queue, quick-cash (<3 taps), split, debt
+│   │   └── OwnerStation.tsx        # Station 4: Analytics, X/Z reports, BOM margins, stock
+│   ├── components/
+│   │   ├── StationRouter.tsx       # Station lock, PIN authentication modal, role switcher
+│   │   ├── ModifierModal.tsx       # Size, milk, sweet, temp, shots, syrup customizer
+│   │   ├── ReceiptModal.tsx        # ESC/POS 58/80mm preview, WhatsApp link, PDF Web Share
+│   │   └── QuickCashCalculator.tsx # 10, 20, 50, 100 SAR buttons + change display
+│   ├── audio/
+│   │   └── chimeSynth.ts           # Web Audio API 3-tone ascending chime
+│   ├── printing/
+│   │   ├── escpos.ts               # 58mm & 80mm ESC/POS raster byte generator
+│   │   ├── zatcaQr.ts              # TLV Base64 QR generator (importing zatca.ts)
+│   │   └── pdfReceipt.ts           # jsPDF Arabic receipt generator (importing arabicShaper & arabicFont)
+│   ├── inventory/
+│   │   └── bomEngine.ts            # Recipe mapping, atomic depletion, low stock alerts
+│   ├── customers/
+│   │   └── debtLedger.ts           # Customer credit (آجل), regional filtering, credit limits
+│   └── utils/
+│       ├── arabicShaper.ts         # Direct copy/import from the-smart-dafter
+│       ├── arabicFont.ts           # Direct copy/import from the-smart-dafter
+│       ├── zatca.ts                # Direct copy/import from the-smart-dafter
+│       └── formatters.ts           # Currency, SAR, phone sanitizer, WhatsApp link builder
+└── tests/
+    ├── e2e_harness.ts              # E2E test runner
+    ├── tier1_features.test.ts      # Feature coverage
+    ├── tier2_boundaries.test.ts    # Boundary & edge cases
+    ├── tier3_pairwise.test.ts      # Cross-feature combinations
+    └── tier4_workloads.test.ts     # Real-world application scenarios
+```

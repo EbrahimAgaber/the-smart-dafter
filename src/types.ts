@@ -6,6 +6,7 @@ export interface Party {
   name: string;
   phone: string;
   address: string;
+  region?: string; // الحي أو المنطقة (Neighborhood or region for filtering, grouping and route planning)
   notes: string;
   openingBalance?: number; // Initial opening debt/credit at onboarding
   currentBalance: number; // Deterministically calculated: For customer: positive = customer owes merchant (receivable/له). For distributor: positive = merchant owes distributor (payable/عليه).

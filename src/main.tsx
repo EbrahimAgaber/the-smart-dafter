@@ -6,47 +6,19 @@ import './index.css';
 // Manage Service Worker for PWA (Only in production to avoid caching dev server modules)
 if ('serviceWorker' in navigator) {
   if (import.meta.env.PROD) {
-    let refreshing = false;
-
-    // When the service worker updates and takes control, reload cleanly to show fresh code
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!refreshing) {
-        refreshing = true;
-        window.location.reload();
-      }
-    });
-
+    // Check for updates safely without disrupting active user sessions or forcing unprompted reloads
     window.addEventListener('load', () => {
       const swPath = `${import.meta.env.BASE_URL}sw.js`.replace(/\/\//g, '/');
       navigator.serviceWorker
         .register(swPath)
         .then((reg) => {
-          // Immediately check for updates
+          // Check for updates gracefully on startup
           reg.update().catch(() => {});
 
-          // Check for updates every time user opens / switches back to the app on mobile
-          document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-              reg.update().catch(() => {});
-            }
-          });
-
-          // Periodic check every 60 seconds
+          // Periodic check every 15 minutes (non-blocking)
           setInterval(() => {
             reg.update().catch(() => {});
-          }, 60 * 1000);
-
-          // If an update is detected, tell the new worker to skip waiting
-          reg.addEventListener('updatefound', () => {
-            const newWorker = reg.installing;
-            if (newWorker) {
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  newWorker.postMessage({ type: 'SKIP_WAITING' });
-                }
-              });
-            }
-          });
+          }, 15 * 60 * 1000);
         })
         .catch((err) => {
           console.warn('SW registration failed:', err);

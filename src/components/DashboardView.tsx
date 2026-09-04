@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   Sparkles,
   Calendar,
+  MapPin,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -59,6 +60,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const p = parties.find((party) => party.id === partyId);
     return p ? p.name : (lang === 'ar' ? 'جهة غير محددة' : 'Unknown Party');
   };
+
+  // Group outstanding customer credit by region / neighborhood for geographical distribution
+  const regionalReceivables = useMemo(() => {
+    const regionMap: Record<string, { totalDebt: number; count: number }> = {};
+    parties
+      .filter((p) => p.type === 'CUSTOMER' && p.currentBalance > 0)
+      .forEach((p) => {
+        let reg = (p.region || '').trim();
+        if (!reg && p.address && p.address.trim()) {
+          const match = p.address.match(/(?:حي\s+[^\s,]+)|(?:[^\s,]+\s+District)/i);
+          reg = match ? match[0].trim() : p.address.trim();
+        }
+        if (!reg) reg = isRtl ? 'أحياء أخرى' : 'Other Districts';
+
+        if (!regionMap[reg]) {
+          regionMap[reg] = { totalDebt: 0, count: 0 };
+        }
+        regionMap[reg].totalDebt += p.currentBalance;
+        regionMap[reg].count += 1;
+      });
+
+    return Object.entries(regionMap)
+      .map(([region, data]) => ({ region, ...data }))
+      .sort((a, b) => b.totalDebt - a.totalDebt);
+  }, [parties, isRtl]);
 
   return (
     <div id="dashboard-view" className="p-4 space-y-6">
@@ -245,6 +271,48 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Regional Receivables Distribution Widget */}
+      {regionalReceivables.length > 0 && (
+        <div id="regional-receivables-section" className="space-y-3 pt-2">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-1.5">
+              <MapPin className="w-4 h-4 text-cyan-600" />
+              <h3 className="text-sm font-bold text-slate-900">
+                {t.regionalReceivables}
+              </h3>
+            </div>
+            <button
+              onClick={onNavigateParties}
+              className="text-xs text-cyan-600 hover:text-cyan-700 font-semibold"
+            >
+              {t.viewAll}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            {regionalReceivables.slice(0, 4).map((r) => (
+              <div
+                key={r.region}
+                onClick={onNavigateParties}
+                className="bg-white hover:bg-slate-50 cursor-pointer p-3.5 rounded-2xl border border-slate-100 shadow-2xs transition-all group"
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-bold text-slate-800 truncate group-hover:text-cyan-700">
+                    {r.region}
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400 font-mono">
+                    {r.count} {isRtl ? 'عملاء' : 'clients'}
+                  </span>
+                </div>
+                <div className="text-sm font-black text-rose-600 font-mono">
+                  {formatCurrency(r.totalDebt, currency, lang)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Recent Transactions Section */}
       <div id="recent-activity-section" className="space-y-3 pt-2">

@@ -86,6 +86,12 @@ export default function App() {
   // Navigation states
   const [selectedPartyForLedger, setSelectedPartyForLedger] = useState<Party | null>(null);
 
+  // Memoized party transactions to prevent redundant canvas pre-renders
+  const selectedPartyTransactions = useMemo(() => {
+    if (!selectedPartyForLedger) return [];
+    return transactions.filter((tx) => tx.partyId === selectedPartyForLedger.id);
+  }, [transactions, selectedPartyForLedger]);
+
   // Modals state
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [modalParty, setModalParty] = useState<Party | null>(null);
@@ -367,7 +373,7 @@ export default function App() {
       ) : selectedPartyForLedger ? (
         <PartyLedgerView
           party={selectedPartyForLedger}
-          transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
+          transactions={selectedPartyTransactions}
           profile={profile}
           lang={lang}
           onBack={() => setSelectedPartyForLedger(null)}
@@ -549,7 +555,7 @@ export default function App() {
             <StatementPdfModal
               key="modal-statement-pdf"
               party={selectedPartyForLedger}
-              transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
+              transactions={selectedPartyTransactions}
               profile={profile}
               lang={lang}
               onClose={() => setActiveModal(null)}

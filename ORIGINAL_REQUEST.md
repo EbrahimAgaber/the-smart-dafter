@@ -123,3 +123,66 @@ Audit every financial calculation in the codebase to ensure correctness:
   - All buttons and navigation flows function correctly
   - Arabic/English switching works without visual glitches
   - Financial calculations produce correct results
+
+## 2026-09-04T14:35:08Z
+
+Build a modern, standalone mobile-first POS and Kitchen Display System (KDS) tailored for coffee shops, drive-thrus, and small restaurants. The application operates 100% on smartphones and tablets (eliminating expensive desktop PCs) using Supabase for sub-second real-time sync between Drive-Thru Attendants, Baristas/Kitchen, and Cashiers, with thermal/WhatsApp receipt generation, recipe-based inventory, regional debt tracking, and owner analytics.
+
+Working directory: c:/Users/bin-g/OneDrive/سطح المكتب/book/coffee-pos
+Integrity mode: demo
+
+## Reused Battle-Tested Assets (Time-Saving Shortcut)
+Import and leverage existing verified modules from `c:/Users/bin-g/OneDrive/سطح المكتب/book/the-smart-dafter`:
+- `src/utils/arabicShaper.ts` (Arabic RTL glyph shaping & BiDi tokenization)
+- `src/utils/fonts/arabicFont.ts` (Lazy-loaded TrueType Arabic font registration)
+- `src/utils/zatca.ts` (ZATCA Phase 1 & 2 TLV Base64 QR code encoding)
+
+## Requirements
+
+### R1. Multi-Device Real-Time Synchronization & Role Isolation
+- Use Supabase Realtime (Postgres Changes / Broadcast) for sub-second ticket state synchronization across mobile stations:
+  1. **Drive-Thru / Order Taker Screen**: Mobile-optimized rapid ordering with car plate/token, beverage size, milk types, sweetness, and temperature modifiers.
+  2. **Kitchen Display System (KDS)**: Dark-mode Kanban ticket board with live timers, visual urgency color codes (Green < 3m, Yellow 3-5m, Red > 5m), audio chime on new orders, and single-tap bump to "Ready".
+  3. **Cashier Station**: Auto-refreshing queue of "Ready" orders, quick-cash calculator buttons (10, 20, 50, 100 SAR), Card/Mada, split payment, and customer credit (آجل).
+  4. **Owner Management**: Live sales velocity, shift reports (X/Z Reports), profit margins, raw stock alerts, and PIN-protected access control.
+- Role-based routing ensuring staff devices are locked to their specific station.
+
+### R2. Order Lifecycle State Machine
+- Strict state transitions: `NEW_ORDER` → `IN_PREPARATION` → `READY_FOR_PICKUP` → `COMPLETED` (or `VOIDED`/`CANCELLED`).
+- Tagging support: Vehicle description / plate number (for drive-thru), buzzer/pager number, or customer name.
+- Flexible item modifiers: sizes, milk choices (oat/almond/whole), syrups, extra shots, and barista text instructions.
+
+### R3. Thermal Printing & Instant WhatsApp Receipts
+- 58mm and 80mm ESC/POS thermal printing via Bluetooth / Network IP (port 9100) and Web Print API, featuring formatted Arabic headers, itemized table, and scannable ZATCA QR code.
+- Instant digital receipt sharing via WhatsApp (`wa.me/<phone>?text=...`) and native mobile Web Share API with attached PDF.
+
+### R4. Customer Debt/Credit (آجل) & Regional Filtering
+- Customer directory with regional/neighborhood classification (e.g. *حي الياسمين*, *حي النرجس*).
+- "Charge to Debt" (بيع آجل) payment option at checkout that updates customer ledger balance in real-time with credit limit validation.
+- Regional filtering for accounts receivable, delivery routing, and targeted payment collection summaries.
+
+### R5. Recipe-Based Inventory (Bill of Materials) & Stock Alerts
+- Recipe mapping linking menu items to raw ingredients (e.g. 1 Spanish Latte deducts 18g coffee beans, 150ml milk, 30ml condensed milk, 1 cup, 1 lid).
+- Automatic inventory depletion on order completion.
+- Low-stock visual warnings and distributor restocking suggestions.
+
+## Acceptance Criteria
+
+### Real-Time Flow & Synchronization
+- [ ] New order created on a mobile drive-thru interface appears on the Kitchen KDS in under 1 second with an audio chime.
+- [ ] Marking an order as "Ready" on the KDS immediately updates the Cashier station's ready queue in under 1 second.
+- [ ] Multiple attendants can submit orders concurrently without ID collisions or data overwrites.
+
+### Mobile Ergonomics & Speed
+- [ ] Drive-thru attendant can compose and submit a customized 2-item coffee order in under 5 taps.
+- [ ] Cashier can complete a cash checkout with exact change calculation in under 3 taps.
+- [ ] All views are fully responsive on 5.5"+ mobile screens with no awkward horizontal scrolling.
+
+### Printing, ZATCA & Digital Receipts
+- [ ] Thermal receipt preview renders correctly for both 58mm and 80mm formats with Arabic shaping and valid ZATCA TLV QR code.
+- [ ] WhatsApp button initiates direct chat to the customer's phone number with formatted order summary and digital receipt link.
+
+### Accounting, Debt & Recipes
+- [ ] Completing a sale automatically deducts corresponding raw ingredients according to the defined recipe.
+- [ ] Charging an order to customer credit accurately updates the customer's balance and attributes the transaction to the customer's designated region.
+

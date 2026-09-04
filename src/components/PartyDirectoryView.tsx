@@ -52,6 +52,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
   const [activeSegment, setActiveSegment] = useState<PartyType>('CUSTOMER');
   const [searchQuery, setSearchQuery] = useState('');
   const [balanceFilter, setBalanceFilter] = useState<'all' | 'debtors' | 'settled'>('all');
+  const [selectedRegion, setSelectedRegion] = useState<string>('all');
 
   // Modal State for Adding/Editing Party
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -59,9 +60,45 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
   const [formName, setFormName] = useState('');
   const [formPhone, setFormPhone] = useState('');
   const [formAddress, setFormAddress] = useState('');
+  const [formRegion, setFormRegion] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formOpeningBalance, setFormOpeningBalance] = useState('0');
   const [formType, setFormType] = useState<PartyType>('CUSTOMER');
+
+  const popularRegions = isRtl
+    ? ['حي الياسمين', 'حي النرجس', 'حي الصحافة', 'حي الملقا', 'حي العقيق', 'حي العليا', 'حي اليرموك', 'حي الروضة']
+    : ['Al-Yasmin', 'Al-Narjis', 'Al-Sahafa', 'Al-Malqa', 'Al-Aqiq', 'Al-Olaya', 'Al-Yarmouk', 'Al-Rawdah'];
+
+  // Dynamically extract distinct regions/neighborhoods from existing parties
+  const availableRegions = useMemo(() => {
+    const regionSet = new Set<string>();
+    parties
+      .filter((p) => p.type === activeSegment)
+      .forEach((p) => {
+        const reg = (p.region || '').trim();
+        if (reg) {
+          regionSet.add(reg);
+        } else if (p.address && p.address.trim()) {
+          const match = p.address.match(/(?:حي\s+[^\s,]+)|(?:[^\s,]+\s+District)/i);
+          if (match) {
+            regionSet.add(match[0].trim());
+          } else {
+            regionSet.add(p.address.trim());
+          }
+        }
+      });
+    return Array.from(regionSet).sort((a, b) => a.localeCompare(b, isRtl ? 'ar' : 'en'));
+  }, [parties, activeSegment, isRtl]);
+
+  const getRegionPartyCount = (reg: string) => {
+    return parties.filter((p) => {
+      if (p.type !== activeSegment) return false;
+      const r = (p.region || '').toLowerCase();
+      const a = (p.address || '').toLowerCase();
+      const target = reg.toLowerCase();
+      return r === target || a.includes(target);
+    }).length;
+  };
 
   // Open add modal
   const handleOpenAdd = () => {
@@ -69,6 +106,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
     setFormName('');
     setFormPhone('');
     setFormAddress('');
+    setFormRegion(selectedRegion !== 'all' ? selectedRegion : '');
     setFormNotes('');
     setFormOpeningBalance('0');
     setFormType(activeSegment);
@@ -82,6 +120,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
     setFormName(party.name);
     setFormPhone(party.phone);
     setFormAddress(party.address);
+    setFormRegion(party.region || '');
     setFormNotes(party.notes);
     setFormOpeningBalance((party.openingBalance || 0).toString());
     setFormType(party.type);
@@ -99,6 +138,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
         name: formName.trim(),
         phone: formPhone.trim(),
         address: formAddress.trim(),
+        region: formRegion.trim() || undefined,
         notes: formNotes.trim(),
         type: formType,
         openingBalance: opening,
@@ -108,6 +148,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
         name: formName.trim(),
         phone: formPhone.trim(),
         address: formAddress.trim(),
+        region: formRegion.trim() || undefined,
         notes: formNotes.trim(),
         type: formType,
         openingBalance: opening,
@@ -121,11 +162,19 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
     return parties
       .filter((p) => p.type === activeSegment)
       .filter((p) => {
+        if (selectedRegion === 'all') return true;
+        const partyReg = (p.region || '').toLowerCase();
+        const partyAddr = (p.address || '').toLowerCase();
+        const target = selectedRegion.toLowerCase();
+        return partyReg === target || partyAddr.includes(target);
+      })
+      .filter((p) => {
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
         return (
           p.name.toLowerCase().includes(q) ||
           p.phone.includes(q) ||
+          (p.region && p.region.toLowerCase().includes(q)) ||
           p.address.toLowerCase().includes(q)
         );
       })
@@ -135,7 +184,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
         return true;
       })
       .sort((a, b) => b.currentBalance - a.currentBalance);
-  }, [parties, activeSegment, searchQuery, balanceFilter]);
+  }, [parties, activeSegment, selectedRegion, searchQuery, balanceFilter]);
 
   const totalOutstanding = useMemo(() => {
     return filteredParties.reduce((sum, p) => sum + p.currentBalance, 0);
@@ -302,17 +351,71 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
               {t.onlyZeroBalance}
             </button>
           </div>
+
+          {/* Regional Neighborhood Filter Bar */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs pt-0.5">
+            <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1 shrink-0 ps-1">
+              <MapPin className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+              <span>{t.region}:</span>
+            </span>
+            <button
+              onClick={() => setSelectedRegion('all')}
+              className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center justify-center shrink-0 ${
+                selectedRegion === 'all'
+                  ? 'bg-cyan-700 text-white shadow-xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+              }`}
+            >
+              {t.allRegions}
+            </button>
+            {availableRegions.map((reg) => {
+              const count = getRegionPartyCount(reg);
+              const isSelected = selectedRegion.toLowerCase() === reg.toLowerCase();
+              return (
+                <button
+                  key={reg}
+                  onClick={() => setSelectedRegion(isSelected ? 'all' : reg)}
+                  className={`min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 shrink-0 ${
+                    isSelected
+                      ? 'bg-cyan-700 text-white shadow-xs'
+                      : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200'
+                  }`}
+                >
+                  <span>{reg}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Directory Total Banner */}
       <div className="bg-white/90 p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between text-xs">
-        <span className="text-slate-400">
-          {activeSegment === 'CUSTOMER' ? t.totalReceivable : t.totalPayable}:
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-slate-500 font-medium">
+            {selectedRegion !== 'all'
+              ? `${isRtl ? 'مستحقات' : 'Outstanding in'} (${selectedRegion})`
+              : activeSegment === 'CUSTOMER'
+              ? t.totalReceivable
+              : t.totalPayable}
+            :
+          </span>
+          {selectedRegion !== 'all' && (
+            <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md border border-cyan-200">
+              {filteredParties.length} {isRtl ? 'جهة' : 'parties'}
+            </span>
+          )}
+        </div>
         <span
           className={`font-black font-mono text-sm ${
-            activeSegment === 'CUSTOMER' ? 'text-rose-400' : 'text-amber-600'
+            activeSegment === 'CUSTOMER' ? 'text-rose-600' : 'text-amber-600'
           }`}
         >
           {formatCurrency(totalOutstanding, currency, lang)}
@@ -383,10 +486,10 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                           <span className="font-mono">{party.phone}</span>
                         </button>
                       )}
-                      {party.address && (
-                        <div className="flex items-center gap-1 truncate max-w-[160px]">
-                          <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span className="truncate">{party.address}</span>
+                      {(party.region || party.address) && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-50 border border-cyan-200/60 text-cyan-800 text-[11px] font-medium truncate max-w-[180px]">
+                          <MapPin className="w-3 h-3 text-cyan-600 shrink-0" />
+                          <span className="truncate">{party.region || party.address}</span>
                         </div>
                       )}
                     </div>
@@ -583,6 +686,45 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                 />
               </div>
 
+              {/* Region / Neighborhood */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs text-slate-500 font-medium">
+                    {t.region}
+                  </label>
+                  <span className="text-[10px] text-cyan-600 font-bold">
+                    {isRtl ? 'تصنيف جغرافي ومسارات' : 'Route & Regional tag'}
+                  </span>
+                </div>
+                {/* Popular neighborhood quick chips */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 mb-1.5 text-[11px]">
+                  {popularRegions.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => {
+                        setFormRegion(r);
+                        if (!formAddress.trim()) setFormAddress(r);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg border text-xs font-semibold shrink-0 transition-colors ${
+                        formRegion === r
+                          ? 'bg-cyan-700 text-white border-cyan-800'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-300/60'
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={formRegion}
+                  onChange={(e) => setFormRegion(e.target.value)}
+                  placeholder={isRtl ? 'اسم الحي (مثال: حي الياسمين)' : 'e.g. Al-Yasmin District'}
+                  className="w-full bg-slate-50 text-slate-900 placeholder-slate-400 text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 shadow-2xs"
+                />
+              </div>
+
               {/* Address */}
               <div>
                 <label className="block text-xs text-slate-400 mb-1">
@@ -592,7 +734,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
                   type="text"
                   value={formAddress}
                   onChange={(e) => setFormAddress(e.target.value)}
-                  placeholder={isRtl ? 'الحي / الشارع / المدينة' : 'District / Street / City'}
+                  placeholder={isRtl ? 'الشارع / رقم المبنى / المعلم' : 'Street / Building / Landmark'}
                   className="w-full bg-slate-50 text-slate-900 placeholder-slate-500 text-xs rounded-xl px-3 py-2.5 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 shadow-2xs"
                 />
               </div>

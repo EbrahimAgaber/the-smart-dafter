@@ -659,6 +659,9 @@ export async function generateStatementPdf(
     const imgData = pCanvas.toDataURL('image/jpeg', 0.95);
     if (p > 0) doc.addPage();
     doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    // Immediately release memory buffers
+    pCanvas.width = 0;
+    pCanvas.height = 0;
   }
 
   return doc;
@@ -1086,6 +1089,9 @@ export async function generateInvoicePdf(
 
   const imgData = canvas.toDataURL('image/jpeg', 0.95);
   doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+  // Immediately release memory buffers
+  canvas.width = 0;
+  canvas.height = 0;
 
   return doc;
 }
@@ -1123,21 +1129,28 @@ export async function shareOrDownloadPdf(
 
     if (canShare) {
       try {
-        await navigator.share({
+        // Race navigator.share with a safety timeout so execution always resumes
+        const sharePromise = navigator.share({
           title,
           text: title,
           files: [file],
         });
+        await Promise.race([
+          sharePromise,
+          new Promise((resolve) => setTimeout(resolve, 30000)),
+        ]);
         return { success: true, blob, method: 'native_share' };
       } catch (err: any) {
+        // Any error during native sharing (AbortError, dismissal, background resumption) is handled cleanly
         if (err?.name === 'AbortError') {
           return { success: true, blob, method: 'native_share' };
         }
-        console.warn('Native share dismissed or failed, falling back:', err);
+        console.warn('Native share dismissed or resumed with notice:', err);
+        return { success: true, blob, method: 'native_share' };
       }
     }
 
-    // 2. Direct anchor download fallback
+    // 2. Direct anchor download fallback - ONLY invoked when Web Share is NOT supported
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
