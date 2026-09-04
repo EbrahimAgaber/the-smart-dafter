@@ -29,9 +29,8 @@ export interface GenerateStatementPdfOptions {
 }
 
 /**
- * High-performance off-screen DOM clone rendering to crisp A4 PDF.
- * Eliminates all CSS transforms, animation jitter, and scroll offsets.
- * Natively renders Arabic RTL cursive text via browser WebKit/Blink engine.
+ * Robust DOM-to-PDF rendering engine using html2canvas & jsPDF.
+ * Renders the visible DOM with native browser fonts, Arabic ligatures & RTL layout.
  */
 export async function exportElementToPdf(
   elementId: string,
@@ -39,15 +38,14 @@ export async function exportElementToPdf(
   autoDownload = false
 ): Promise<{ blob: Blob; doc: jsPDF } | null> {
   if (typeof document === 'undefined') {
-    // Headless / SSR / Test runner mock
     const mockDoc = new jsPDF();
     return { blob: mockDoc.output('blob'), doc: mockDoc };
   }
 
-  // 1. Locate source DOM element (with retry if modal is transitioning)
+  // 1. Locate source DOM element with retry
   let element = document.getElementById(elementId);
   if (!element) {
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise((resolve) => setTimeout(resolve, 150));
     element = document.getElementById(elementId);
   }
 
@@ -56,7 +54,7 @@ export async function exportElementToPdf(
     return null;
   }
 
-  // 2. Wait for fonts to be ready
+  // 2. Wait for fonts to ensure layout calculation is accurate
   if (document.fonts && document.fonts.ready) {
     try {
       await document.fonts.ready;
@@ -65,41 +63,39 @@ export async function exportElementToPdf(
     }
   }
 
-  // 3. Create a clean, isolated off-screen sandbox clone
-  // This bypasses any motion.div transforms (scale: 0.98, y: 48) and scroll offsets
-  const clone = element.cloneNode(true) as HTMLElement;
-  clone.id = `${elementId}-print-sandbox`;
-  clone.style.position = 'fixed';
-  clone.style.left = '-9999px';
-  clone.style.top = '0';
-  clone.style.width = '794px'; // 210mm at 96 DPI (exact A4 width)
-  clone.style.minWidth = '794px';
-  clone.style.maxWidth = '794px';
-  clone.style.boxSizing = 'border-box';
-  clone.style.margin = '0';
-  clone.style.padding = '32px';
-  clone.style.backgroundColor = '#ffffff';
-  clone.style.color = '#1c1917';
-  clone.style.transform = 'none';
-  clone.style.animation = 'none';
-  clone.style.transition = 'none';
-  clone.style.boxShadow = 'none';
-  clone.style.zIndex = '-9999';
-
-  document.body.appendChild(clone);
-
   try {
-    // 4. Capture crisp canvas (scale: 2 produces 1588px width - razor sharp on retina & mobile)
-    const canvas = await html2canvas(clone, {
+    // 3. Render high-res canvas directly from the target DOM element
+    // Uses scale: 2 for sharp retina print without clipping
+    const canvas = await html2canvas(element, {
       scale: 2,
       useCORS: true,
       allowTaint: true,
       logging: false,
       backgroundColor: '#ffffff',
-      windowWidth: 794,
-      scrollX: 0,
-      scrollY: 0,
+      onclone: (clonedDoc) => {
+        const el = clonedDoc.getElementById(elementId);
+        if (el) {
+          // Remove shadows and borders for clean paper output
+          el.style.boxShadow = 'none';
+          el.style.borderRadius = '0';
+          el.style.transform = 'none';
+          el.style.animation = 'none';
+
+          // Ensure all parent containers inside modal have visible overflow
+          let parent = el.parentElement;
+          while (parent && parent !== clonedDoc.body) {
+            parent.style.transform = 'none';
+            parent.style.overflow = 'visible';
+            parent = parent.parentElement;
+          }
+        }
+      },
     });
+
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      console.error('html2canvas produced invalid canvas dimensions');
+      return null;
+    }
 
     const imgData = canvas.toDataURL('image/jpeg', 0.95);
     const pdf = new jsPDF({
@@ -113,21 +109,21 @@ export async function exportElementToPdf(
     const pageHeight = 297; // A4 height in mm
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-    if (imgHeight <= pageHeight + 4) {
-      // Single A4 page
-      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, pageHeight));
+    if (imgHeight <= pageHeight + 6) {
+      // Single A4 page document
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, Math.min(imgHeight, pageHeight), undefined, 'FAST');
     } else {
       // Multi-page document (for long account statements)
       let heightLeft = imgHeight;
       let position = 0;
 
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
       heightLeft -= pageHeight;
 
       while (heightLeft > 5) {
         position -= pageHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
         heightLeft -= pageHeight;
       }
     }
@@ -139,12 +135,8 @@ export async function exportElementToPdf(
     const blob = pdf.output('blob');
     return { blob, doc: pdf };
   } catch (error) {
-    console.error('Error in exportElementToPdf:', error);
+    console.error('Error generating PDF canvas:', error);
     return null;
-  } finally {
-    if (clone.parentNode) {
-      clone.parentNode.removeChild(clone);
-    }
   }
 }
 
