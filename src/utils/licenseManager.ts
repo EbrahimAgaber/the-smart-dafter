@@ -26,11 +26,19 @@ export function getSecretSalt(): string {
 const DEFAULT_ADMIN_PIN_HASHES = [
   'a6299b827e857dd8f5db916fc3ea47c32ebcc88a6d71c4c810d7967912dbe8ec',
   'b1c098dfbeebaa92cf081cbca20e408ecbbcf6febe9e71bfaeb0bc2dc509a25b',
+  // SHA-256 for owner passkey 204124Eg
+  'b52e0b1a0aa60046bcb039cf63295d68b90e29f0d5eea01d928325c62cf6514a',
+  '795bca03d5ff3e7e362e0cf2354f1dbba92de7040e18d6c7808c879cf00cb164',
 ];
 
 export async function verifyAdminPin(enteredPin: string): Promise<boolean> {
   const trimmed = enteredPin.trim();
   if (!trimmed) return false;
+
+  // Direct check for authorized owner passkey
+  if (trimmed === '204124Eg' || trimmed.toLowerCase() === '204124eg') {
+    return true;
+  }
 
   try {
     const encoder = new TextEncoder();
@@ -204,16 +212,10 @@ export function verifyLicenseKey(
 }
 
 /**
- * Get current active license status
+ * Get current active license status.
+ * Requires an explicit cryptographic key. Unactivated instances must activate before app use.
  */
 export function getLicenseStatus(): LicenseStatus {
-  // Check if first launch, grant default 14-day free trial out of the box
-  let firstLaunch = localStorage.getItem(FIRST_LAUNCH_KEY);
-  if (!firstLaunch) {
-    firstLaunch = new Date().toISOString();
-    localStorage.setItem(FIRST_LAUNCH_KEY, firstLaunch);
-  }
-
   const stored = localStorage.getItem(STORAGE_KEY);
   let record: LicenseRecord | null = null;
 
@@ -227,59 +229,52 @@ export function getLicenseStatus(): LicenseStatus {
 
   const nowMs = Date.now();
 
-  // If user activated an explicit key:
-  if (record && record.expiryTimestamp) {
-    const isLifetime = record.planCode === 'LIFE';
-    const isExpired = !isLifetime && nowMs > record.expiryTimestamp;
-    const diffMs = Math.max(0, record.expiryTimestamp - nowMs);
-    const daysRemaining = isLifetime ? 9999 : Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  // If user activated an authentic cryptographic key:
+  if (record && record.expiryTimestamp && record.key) {
+    const verified = verifyLicenseKey(record.key, record.clientTag || '');
+    if (verified.valid) {
+      const isLifetime = record.planCode === 'LIFE';
+      const isExpired = !isLifetime && nowMs > record.expiryTimestamp;
+      const diffMs = Math.max(0, record.expiryTimestamp - nowMs);
+      const daysRemaining = isLifetime ? 9999 : Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-    const expiryDate = new Date(record.expiryTimestamp);
-    const expiryDateStr = isLifetime
-      ? 'رخصة دائمة (مفتوحة)'
-      : expiryDate.toLocaleDateString('ar-SA', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        });
+      const expiryDate = new Date(record.expiryTimestamp);
+      const expiryDateStr = isLifetime
+        ? 'رخصة دائمة (مفتوحة)'
+        : expiryDate.toLocaleDateString('ar-SA', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
 
-    return {
-      isActive: !isExpired,
-      isExpired,
-      isLifetime,
-      daysRemaining,
-      expiryDateStr,
-      planNameAr: isLifetime ? 'رخصة دائمة' : `باقة (${record.planCode})`,
-      planNameEn: isLifetime ? 'Lifetime License' : `Plan (${record.planCode})`,
-      currentKey: record.key,
-    };
+      return {
+        isActive: !isExpired,
+        isExpired,
+        isLifetime,
+        daysRemaining,
+        expiryDateStr,
+        planNameAr: isLifetime ? 'رخصة دائمة' : `باقة (${record.planCode})`,
+        planNameEn: isLifetime ? 'Lifetime License' : `Plan (${record.planCode})`,
+        currentKey: record.key,
+      };
+    }
   }
 
-  // Fallback: 14-Day Free Initial Trial
-  const firstLaunchDate = new Date(firstLaunch).getTime();
-  const trialDurationMs = 14 * 24 * 60 * 60 * 1000;
-  const trialExpiryMs = firstLaunchDate + trialDurationMs;
-  const isExpired = nowMs > trialExpiryMs;
-  const diffMs = Math.max(0, trialExpiryMs - nowMs);
-  const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-  const trialExpiryDate = new Date(trialExpiryMs);
-  const expiryDateStr = trialExpiryDate.toLocaleDateString('ar-SA', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-
+  // Fallback: App requires activation
   return {
-    isActive: !isExpired,
-    isExpired,
+    isActive: false,
+    isExpired: false,
     isLifetime: false,
-    daysRemaining,
-    expiryDateStr,
-    planNameAr: 'فترة تجريبية مجانية (14 يوم)',
-    planNameEn: '14-Day Free Trial',
-    currentKey: 'TRIAL-FREE-14D',
+    daysRemaining: 0,
+    expiryDateStr: '',
+    planNameAr: 'غير مفعل',
+    planNameEn: 'Not Activated',
+    currentKey: '',
   };
+}
+
+export function isAppActivated(): boolean {
+  return getLicenseStatus().isActive;
 }
 
 /**

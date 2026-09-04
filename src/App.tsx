@@ -42,7 +42,8 @@ const SecurityGuardModal = lazy(() =>
 const AdminKeyGeneratorModal = lazy(() =>
   import('./components/AdminKeyGeneratorModal').then((m) => ({ default: m.AdminKeyGeneratorModal }))
 );
-import { checkCanCreateInvoice } from './utils/licenseManager';
+import { ActivationGateView } from './components/ActivationGateView';
+import { checkCanCreateInvoice, getLicenseStatus, LicenseStatus } from './utils/licenseManager';
 
 type ModalType =
   | null
@@ -73,6 +74,8 @@ export default function App() {
     return (localStorage.getItem('daftar_smart_lang') as Language) || 'ar';
   });
 
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus>(() => getLicenseStatus());
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [parties, setParties] = useState<Party[]>(() => store.getParties());
   const [products, setProducts] = useState<Product[]>(() => store.getProducts());
@@ -95,20 +98,21 @@ export default function App() {
     localStorage.setItem('daftar_smart_lang', lang);
   }, [lang]);
 
-  // Prompt setup wizard if fresh start
+  // Prompt setup wizard if fresh start and app is activated
   useEffect(() => {
-    if (!profile.name) {
+    if (licenseStatus.isActive && !profile.name) {
       setActiveModal('store-setup');
     }
-  }, [profile.name]);
+  }, [profile.name, licenseStatus.isActive]);
 
-  // Refresh local state from store
+  // Refresh local state from store and license manager
   const refreshStoreData = useCallback(() => {
     setParties(store.getParties());
     setProducts(store.getProducts());
     setTransactions(store.getTransactions());
     setProfile(store.getProfile());
     setMetrics(store.getDashboardMetrics());
+    setLicenseStatus(getLicenseStatus());
 
     // Update selected party reference if open
     setSelectedPartyForLedger((prev) => (prev ? store.getPartyById(prev.id) || null : null));
@@ -327,25 +331,40 @@ export default function App() {
       onToggleLang={handleToggleLang}
       onOpenPhonePairing={() => setActiveModal('phone-pairing')}
       bottomBar={
-        <BottomNavigation
-          activeTab={activeTab}
-          onSelectTab={(tab) => {
-            setSelectedPartyForLedger(null);
-            setActiveTab(tab);
-          }}
-          lang={lang}
-          receivablesCount={activeDebtorsCount}
-        />
+        !licenseStatus.isActive ? undefined : (
+          <BottomNavigation
+            activeTab={activeTab}
+            onSelectTab={(tab) => {
+              setSelectedPartyForLedger(null);
+              setActiveTab(tab);
+            }}
+            lang={lang}
+            receivablesCount={activeDebtorsCount}
+          />
+        )
       }
     >
       {/* PWA Install Banner */}
-      <PWAInstallBanner
-        lang={lang}
-        onOpenPhonePairing={() => setActiveModal('phone-pairing')}
-      />
+      {licenseStatus.isActive && (
+        <PWAInstallBanner
+          lang={lang}
+          onOpenPhonePairing={() => setActiveModal('phone-pairing')}
+        />
+      )}
 
-      {/* View routing depending on activeTab or dedicated ledger view */}
-      {selectedPartyForLedger ? (
+      {/* View routing depending on activeTab, dedicated ledger view, or activation gate */}
+      {!licenseStatus.isActive ? (
+        <ActivationGateView
+          lang={lang}
+          profile={profile}
+          onToggleLang={handleToggleLang}
+          onActivated={(status) => {
+            setLicenseStatus(status);
+            refreshStoreData();
+          }}
+          onOpenOwnerKeyGen={() => setActiveModal('admin-keygen')}
+        />
+      ) : selectedPartyForLedger ? (
         <PartyLedgerView
           party={selectedPartyForLedger}
           transactions={store.getTransactionsByParty(selectedPartyForLedger.id)}
@@ -571,7 +590,10 @@ export default function App() {
               profile={profile}
               lang={lang}
               onClose={() => setActiveModal(null)}
-              onLicenseUpdated={() => refreshStoreData()}
+              onLicenseUpdated={(status) => {
+                setLicenseStatus(status);
+                refreshStoreData();
+              }}
             />
           </Suspense>
         )}
@@ -583,6 +605,10 @@ export default function App() {
               key="modal-admin-keygen"
               lang={lang}
               onClose={() => setActiveModal(null)}
+              onLicenseActivated={(status) => {
+                setLicenseStatus(status);
+                refreshStoreData();
+              }}
             />
           </Suspense>
         )}
