@@ -168,6 +168,14 @@ export async function generateStatementPdf(
     return doc;
   }
 
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore font readiness timeout
+    }
+  }
+
   // 1. Prepare sorted ledger rows with running balance
   const filtered = transactions.filter((tx) => {
     const txDate = tx.date ? tx.date.split('T')[0] : '';
@@ -560,20 +568,30 @@ export async function generateStatementPdf(
   const labelX = isRtl ? PAGE_WIDTH - MARGIN_X - 20 : MARGIN_X + 20;
   tCtx.fillText(isRtl ? 'المجموع الإجمالي للحركات:' : 'Total Activity:', labelX, totalsY + 26);
 
+  // Exact column alignment matching table rows:
+  // In RTL:
+  // Debit cell is [360, 500], left-aligned at cellX = 370
+  // Credit cell is [220, 360], left-aligned at cellX = 230
+  // Balance cell is [60, 220], left-aligned at cellX = 70
+  // In LTR:
+  // Debit cell is [740, 880], right-aligned at cellX = 870
+  // Credit cell is [880, 1020], right-aligned at cellX = 1010
+  // Balance cell is [1020, 1180], right-aligned at cellX = 1170
+  const debitX = isRtl ? 370 : 870;
+  const creditX = isRtl ? 230 : 1010;
+  const balX = isRtl ? 70 : 1170;
+
   // Total Debit
   tCtx.fillStyle = '#b91c1c';
   tCtx.textAlign = isRtl ? 'left' : 'right';
-  const debitX = isRtl ? MARGIN_X + 440 : MARGIN_X + CONTENT_WIDTH - 440;
   tCtx.fillText(formatCurrency(totalDebit, currency, lang), debitX, totalsY + 26);
 
   // Total Credit
   tCtx.fillStyle = '#047857';
-  const creditX = isRtl ? MARGIN_X + 300 : MARGIN_X + CONTENT_WIDTH - 300;
   tCtx.fillText(formatCurrency(totalCredit, currency, lang), creditX, totalsY + 26);
 
   // Final Balance
   tCtx.fillStyle = '#0f172a';
-  const balX = isRtl ? MARGIN_X + 140 : MARGIN_X + CONTENT_WIDTH - 140;
   tCtx.fillText(formatCurrency(rolling, currency, lang), balX, totalsY + 26);
   tCtx.restore();
 
@@ -682,6 +700,14 @@ export async function generateInvoicePdf(
   if (typeof document === 'undefined') {
     doc.text(`Invoice: ${transaction.receiptNumber}`, 14, 20);
     return doc;
+  }
+
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Ignore font readiness timeout
+    }
   }
 
   // Pre-load QR Code & Logo Images
