@@ -19,6 +19,7 @@ import QRCode from 'qrcode';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
+import type { jsPDF } from 'jspdf';
 import { generateInvoicePdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 import { generateZatcaTlvQrString } from '../utils/zatca';
 
@@ -87,12 +88,12 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   }, [profile, transaction, party, isVatApplied]);
 
-  // Precompute PDF Blob without pre-render timeout hacks
+  // Precompute PDF Blob once DOM is mounted
   useEffect(() => {
     let mounted = true;
     let activeUrl: string | null = null;
 
-    async function preparePdf() {
+    const timer = setTimeout(async () => {
       try {
         const doc = await generateInvoicePdf({
           profile,
@@ -111,12 +112,11 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
       } catch (e) {
         console.warn('Precomputing Invoice PDF failed:', e);
       }
-    }
-
-    preparePdf();
+    }, 120);
 
     return () => {
       mounted = false;
+      clearTimeout(timer);
       if (activeUrl) {
         URL.revokeObjectURL(activeUrl);
       }
@@ -146,18 +146,25 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     setIsGenerating(true);
     setShareFeedback(null);
     try {
-      const doc = await generateInvoicePdf({
-        profile,
-        transaction,
-        party,
-        zatcaQrDataUrl: zatcaQrUrl || undefined,
-        isVatApplied,
-        lang,
-      });
+      let blob = pdfBlob;
+      let doc: jsPDF | null = null;
+      if (!blob) {
+        doc = await generateInvoicePdf({
+          profile,
+          transaction,
+          party,
+          zatcaQrDataUrl: zatcaQrUrl || undefined,
+          isVatApplied,
+          lang,
+        });
+        blob = doc.output('blob');
+      }
+
       const result = await shareOrDownloadPdf(
         doc,
         pdfFileName,
-        `${docTitle} - #${transaction.receiptNumber}`
+        `${docTitle} - #${transaction.receiptNumber}`,
+        blob
       );
       if (result.success) {
         setShareFeedback(isRtl ? 'تم تجهيز ومشاركة ملف PDF بنجاح!' : 'PDF ready and shared!');

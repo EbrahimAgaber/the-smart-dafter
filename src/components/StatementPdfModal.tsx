@@ -15,6 +15,7 @@ import {
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
+import type { jsPDF } from 'jspdf';
 import { generateStatementPdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 
 interface StatementPdfModalProps {
@@ -98,12 +99,12 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
 
   const pdfFileName = `${profile.name.replace(/\s+/g, '_')}_Statement_${party.name.replace(/\s+/g, '_')}.pdf`;
 
-  // Precompute Statement PDF Blob without pre-render timeout hacks
+  // Precompute Statement PDF Blob once DOM is mounted
   useEffect(() => {
     let mounted = true;
     let activeUrl: string | null = null;
 
-    async function preparePdf() {
+    const timer = setTimeout(async () => {
       try {
         const doc = await generateStatementPdf({
           profile,
@@ -122,12 +123,11 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
       } catch (e) {
         console.warn('Precomputing Statement PDF failed:', e);
       }
-    }
-
-    preparePdf();
+    }, 120);
 
     return () => {
       mounted = false;
+      clearTimeout(timer);
       if (activeUrl) {
         URL.revokeObjectURL(activeUrl);
       }
@@ -157,18 +157,25 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
     setIsGenerating(true);
     setShareFeedback(null);
     try {
-      const doc = await generateStatementPdf({
-        profile,
-        party,
-        transactions: filteredTransactions,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        lang,
-      });
+      let blob = pdfBlob;
+      let doc: jsPDF | null = null;
+      if (!blob) {
+        doc = await generateStatementPdf({
+          profile,
+          party,
+          transactions: filteredTransactions,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          lang,
+        });
+        blob = doc.output('blob');
+      }
+
       const result = await shareOrDownloadPdf(
         doc,
         pdfFileName,
-        `${t.statementHeaderTitle} - ${party.name}`
+        `${t.statementHeaderTitle} - ${party.name}`,
+        blob
       );
       if (result.success) {
         setShareFeedback(isRtl ? 'تم تجهيز ومشاركة كشف الحساب كـ PDF!' : 'Statement PDF ready and shared!');
