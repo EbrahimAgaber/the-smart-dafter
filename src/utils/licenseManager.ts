@@ -229,35 +229,32 @@ export function getLicenseStatus(): LicenseStatus {
 
   const nowMs = Date.now();
 
-  // If user activated an authentic cryptographic key:
+  // If user activated an authentic cryptographic key (already verified at activation time):
   if (record && record.expiryTimestamp && record.key) {
-    const verified = verifyLicenseKey(record.key, record.clientTag || '');
-    if (verified.valid) {
-      const isLifetime = record.planCode === 'LIFE';
-      const isExpired = !isLifetime && nowMs > record.expiryTimestamp;
-      const diffMs = Math.max(0, record.expiryTimestamp - nowMs);
-      const daysRemaining = isLifetime ? 9999 : Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    const isLifetime = record.planCode === 'LIFE';
+    const isExpired = !isLifetime && nowMs > record.expiryTimestamp;
+    const diffMs = Math.max(0, record.expiryTimestamp - nowMs);
+    const daysRemaining = isLifetime ? 9999 : Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 
-      const expiryDate = new Date(record.expiryTimestamp);
-      const expiryDateStr = isLifetime
-        ? 'رخصة دائمة (مفتوحة)'
-        : expiryDate.toLocaleDateString('ar-SA', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          });
+    const expiryDate = new Date(record.expiryTimestamp);
+    const expiryDateStr = isLifetime
+      ? 'رخصة دائمة (مفتوحة)'
+      : expiryDate.toLocaleDateString('ar-SA', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        });
 
-      return {
-        isActive: !isExpired,
-        isExpired,
-        isLifetime,
-        daysRemaining,
-        expiryDateStr,
-        planNameAr: isLifetime ? 'رخصة دائمة' : `باقة (${record.planCode})`,
-        planNameEn: isLifetime ? 'Lifetime License' : `Plan (${record.planCode})`,
-        currentKey: record.key,
-      };
-    }
+    return {
+      isActive: !isExpired,
+      isExpired,
+      isLifetime,
+      daysRemaining,
+      expiryDateStr,
+      planNameAr: isLifetime ? 'رخصة دائمة' : `باقة (${record.planCode})`,
+      planNameEn: isLifetime ? 'Lifetime License' : `Plan (${record.planCode})`,
+      currentKey: record.key,
+    };
   }
 
   // Fallback: App requires activation

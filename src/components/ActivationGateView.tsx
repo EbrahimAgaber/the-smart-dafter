@@ -96,8 +96,9 @@ export const ActivationGateView: React.FC<ActivationGateViewProps> = ({
     setIsSubmitting(true);
 
     try {
-      const clientTag = profile?.name || '';
-      const result = activateLicenseKey(cleanKey, clientTag);
+      // Use empty clientTag for universal key acceptance — the store setup wizard
+      // runs after activation, so profile.name is not yet available on fresh installs.
+      const result = activateLicenseKey(cleanKey, '');
 
       if (result.success && result.status) {
         playSuccessChime();
