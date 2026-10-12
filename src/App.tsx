@@ -22,6 +22,7 @@ import { SettingsView } from './components/SettingsView';
 import { InvoiceCreatorModal } from './components/InvoiceCreatorModal';
 import { PaymentReceiptModal } from './components/PaymentReceiptModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from './utils/formatters';
 
 // Lazy-loaded modals to shrink initial bundle and isolate heavy PDF / QR dependencies
 const InvoicePdfModal = lazy(() =>
@@ -151,11 +152,22 @@ export default function App() {
     remainingBalanceDelta: number;
     notes: string;
     paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
+    customerPhone?: string;
+    autoSendWhatsApp?: boolean;
   }) => {
     if (!checkCanCreateInvoice()) {
       setActiveModal('security-guard');
       return;
     }
+
+    // If customer phone was entered or updated in the invoice, update customer profile
+    if (txData.customerPhone) {
+      const existingParty = store.getPartyById(txData.partyId);
+      if (existingParty && existingParty.phone !== txData.customerPhone) {
+        store.updateParty(existingParty.id, { phone: txData.customerPhone });
+      }
+    }
+
     const newTx = store.addTransaction(txData);
     refreshStoreData();
     setActiveModal(null);
@@ -163,6 +175,26 @@ export default function App() {
     // Prompt receipt / invoice PDF for immediate view or WhatsApp sharing
     const party = store.getPartyById(txData.partyId);
     if (party) {
+      // Auto-persist customer phone number to party profile if entered or updated
+      if (txData.customerPhone && txData.customerPhone.trim() !== (party.phone || '').trim()) {
+        store.updateParty({
+          ...party,
+          phone: txData.customerPhone.trim(),
+        });
+        refreshStoreData();
+      }
+
+      // Direct WhatsApp dispatch if autoSendWhatsApp was requested
+      if (txData.autoSendWhatsApp) {
+        const phoneToUse = txData.customerPhone || party.phone;
+        const cleanPhone = sanitizePhoneNumber(phoneToUse);
+        if (cleanPhone) {
+          const msg = buildWhatsAppMessage(party, newTx, profile, lang);
+          const url = `https://wa.me/${cleanPhone}?text=${msg}`;
+          openExternalUrl(url);
+        }
+      }
+
       setActiveTxForPdf(newTx);
       setModalParty(party);
       setActiveModal('invoice-pdf');
@@ -248,9 +280,10 @@ export default function App() {
   };
 
   // Party CRUD handlers
-  const handleAddParty = (partyData: Omit<Party, 'id' | 'currentBalance' | 'createdAt'>) => {
-    store.addParty(partyData);
+  const handleAddParty = (partyData: Omit<Party, 'id' | 'currentBalance' | 'createdAt'>): Party => {
+    const created = store.addParty(partyData);
     refreshStoreData();
+    return created;
   };
 
   const handleUpdateParty = (id: string, updates: Partial<Party>) => {
@@ -267,9 +300,10 @@ export default function App() {
   };
 
   // Product CRUD handlers
-  const handleAddProduct = (prodData: Omit<Product, 'id'>) => {
-    store.addProduct(prodData);
+  const handleAddProduct = (prodData: Omit<Product, 'id'>): Product => {
+    const created = store.addProduct(prodData);
     refreshStoreData();
+    return created;
   };
 
   const handleUpdateProduct = (id: string, updates: Partial<Product>) => {
@@ -490,6 +524,8 @@ export default function App() {
             initialPartyId={modalParty?.id}
             onClose={() => setActiveModal(null)}
             onSubmit={handleCreateTransaction}
+            onAddParty={handleAddParty}
+            onAddProduct={handleAddProduct}
           />
         )}
 
@@ -505,6 +541,8 @@ export default function App() {
             initialPartyId={modalParty?.id}
             onClose={() => setActiveModal(null)}
             onSubmit={handleCreateTransaction}
+            onAddParty={handleAddParty}
+            onAddProduct={handleAddProduct}
           />
         )}
 

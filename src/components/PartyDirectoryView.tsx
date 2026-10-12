@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, PartyType } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
+import { formatCurrency, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import { playSuccessChime, getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PartyDirectoryViewProps {
@@ -210,6 +210,8 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
     return filteredParties.reduce((sum, p) => sum + p.currentBalance, 0);
   }, [filteredParties]);
 
+  const [feedbackNotice, setFeedbackNotice] = useState<string>('');
+
   const handleWhatsAppClick = (party: Party, e: React.MouseEvent) => {
     e.stopPropagation();
     const cleanPhone = sanitizePhoneNumber(party.phone);
@@ -217,7 +219,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${textMsg}`
       : `https://wa.me/?text=${textMsg}`;
-    window.open(url, '_blank');
+    openExternalUrl(url);
   };
 
   const handlePhoneCall = (phone: string, e: React.MouseEvent) => {
@@ -241,7 +243,8 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
           }
         }
       } else {
-        alert(isRtl ? 'استيراد جهات الاتصال مدعوم عبر متصفح الجوال' : 'Contact import is supported on mobile browser');
+        setFeedbackNotice(isRtl ? 'استيراد جهات الاتصال مدعوم عبر متصفح الجوال' : 'Contact import is supported on mobile browser');
+        setTimeout(() => setFeedbackNotice(''), 3500);
       }
     } catch (e) {
       console.warn('Contact picker cancelled or failed', e);
@@ -285,6 +288,13 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
             </button>
           </div>
         </div>
+
+        {feedbackNotice && (
+          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{feedbackNotice}</span>
+          </div>
+        )}
 
         {/* Segmented Control (Customers vs Distributors) */}
         <div

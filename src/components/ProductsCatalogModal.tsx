@@ -53,6 +53,8 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
   const [manualBarcodeInput, setManualBarcodeInput] = useState<string>('');
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  const [cameraErrorNotice, setCameraErrorNotice] = useState<string>('');
+
   useEffect(() => {
     let stream: MediaStream | null = null;
     let animFrame: number | null = null;
@@ -99,7 +101,8 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
         })
         .catch((err) => {
           console.warn('Camera scanner access error:', err);
-          alert(isRtl ? 'تعذر الوصول إلى الكاميرا لمسح الباركود' : 'Could not access camera for barcode scan');
+          setCameraErrorNotice(isRtl ? 'تعذر الوصول إلى الكاميرا لمسح الباركود' : 'Could not access camera for barcode scan');
+          setTimeout(() => setCameraErrorNotice(''), 4000);
           setIsScanning(false);
         });
     }
@@ -210,6 +213,13 @@ export const ProductsCatalogModal: React.FC<ProductsCatalogModalProps> = ({
           <Camera className="w-4 h-4 text-cyan-600" />
         </button>
       </div>
+
+      {cameraErrorNotice && (
+        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2">
+          <X className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{cameraErrorNotice}</span>
+        </div>
+      )}
 
       {/* Products Grid / List */}
       <div className="space-y-2.5">

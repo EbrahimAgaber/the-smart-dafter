@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   TrendingUp,
   TrendingDown,
@@ -15,10 +15,12 @@ import {
   Sparkles,
   Calendar,
   MapPin,
+  Search,
+  X,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, formatDate } from '../utils/formatters';
+import { formatCurrency, formatDate, formatShortDate } from '../utils/formatters';
 
 interface DashboardViewProps {
   metrics: {
@@ -85,6 +87,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       .map(([region, data]) => ({ region, ...data }))
       .sort((a, b) => b.totalDebt - a.totalDebt);
   }, [parties, isRtl]);
+
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Helper to normalize digits and Arabic characters for resilient search
+  const normalizeText = (str: string): string => {
+    if (!str) return '';
+    return str
+      .toLowerCase()
+      .replace(/[٠-٩]/g, (d) => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/ة/g, 'ه')
+      .replace(/[\u064B-\u065F]/g, ''); // strip Arabic tashkeel/diacritics
+  };
+
+  // Filter transactions by date, party name, or notes
+  const filteredTransactions = useMemo(() => {
+    const rawQuery = searchQuery.trim();
+    if (!rawQuery) {
+      return recentTransactions;
+    }
+
+    const q = normalizeText(rawQuery);
+
+    return recentTransactions.filter((tx) => {
+      // 1. Party name & phone & address
+      const party = parties.find((p) => p.id === tx.partyId);
+      const partyNameNorm = normalizeText(party ? party.name : '');
+      const partyPhoneNorm = normalizeText(party ? party.phone : '');
+
+      // 2. Notes
+      const notesNorm = normalizeText(tx.notes || '');
+
+      // 3. Receipt / Invoice number
+      const receiptNumNorm = normalizeText(tx.receiptNumber || '');
+
+      // 4. Dates: raw ISO date, localized formatted dates in Arabic & English, and short dates
+      const rawDateNorm = normalizeText(tx.date || '');
+      const formattedArNorm = normalizeText(formatDate(tx.date, 'ar'));
+      const formattedEnNorm = normalizeText(formatDate(tx.date, 'en'));
+      const shortArNorm = normalizeText(formatShortDate(tx.date, 'ar'));
+      const shortEnNorm = normalizeText(formatShortDate(tx.date, 'en'));
+
+      // 5. Line items (if applicable)
+      const itemsNorm = normalizeText((tx.items || []).map((i) => i.name).join(' '));
+
+      return (
+        partyNameNorm.includes(q) ||
+        partyPhoneNorm.includes(q) ||
+        notesNorm.includes(q) ||
+        receiptNumNorm.includes(q) ||
+        rawDateNorm.includes(q) ||
+        formattedArNorm.includes(q) ||
+        formattedEnNorm.includes(q) ||
+        shortArNorm.includes(q) ||
+        shortEnNorm.includes(q) ||
+        itemsNorm.includes(q)
+      );
+    });
+  }, [recentTransactions, parties, searchQuery]);
 
   return (
     <div id="dashboard-view" className="p-4 space-y-6">
@@ -314,12 +375,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* Recent Transactions Section */}
+      {/* Recent Transactions Section with Global Search Bar */}
       <div id="recent-activity-section" className="space-y-3 pt-2">
         <div className="flex items-center justify-between px-1">
-          <h3 className="text-sm font-bold text-slate-900">
-            {t.recentActivity}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-slate-900">
+              {searchQuery.trim()
+                ? (isRtl ? `نتائج البحث (${filteredTransactions.length})` : `Search Results (${filteredTransactions.length})`)
+                : t.recentActivity}
+            </h3>
+            {searchQuery.trim() && (
+              <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full border border-cyan-200">
+                {isRtl ? 'تصفية نشطة' : 'Filter active'}
+              </span>
+            )}
+          </div>
           <button
             id="btn-dashboard-view-parties"
             onClick={onNavigateParties}
@@ -330,14 +400,98 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
 
+        {/* Global Transaction Search Bar */}
+        {recentTransactions.length > 0 && (
+          <div id="transaction-search-container" className="space-y-1.5">
+            <div className="relative flex items-center">
+              <Search
+                className={`w-4 h-4 text-slate-400 absolute ${
+                  isRtl ? 'right-3.5' : 'left-3.5'
+                } pointer-events-none`}
+              />
+              <input
+                id="input-transaction-search"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setSearchQuery('');
+                }}
+                placeholder={t.searchTransactionsPlaceholder}
+                className={`w-full bg-white border border-slate-200 focus:border-cyan-600 focus:ring-3 focus:ring-cyan-500/15 rounded-2xl py-2.5 text-xs font-medium text-slate-900 placeholder:text-slate-400 transition-all outline-none shadow-2xs ${
+                  isRtl ? 'pr-10 pl-10' : 'pl-10 pr-10'
+                }`}
+                aria-label={t.searchTransactionsLabel}
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  id="btn-clear-transaction-search"
+                  onClick={() => setSearchQuery('')}
+                  className={`absolute ${
+                    isRtl ? 'left-2.5' : 'right-2.5'
+                  } p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors`}
+                  title={t.clearSearch}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Active search filter details & clear action */}
+            {searchQuery.trim() && (
+              <div className="flex items-center justify-between text-xs px-1 text-slate-500">
+                <span className="text-[11px]">
+                  {isRtl
+                    ? `عرض ${filteredTransactions.length} من إجمالي ${recentTransactions.length} حركة`
+                    : `Showing ${filteredTransactions.length} of ${recentTransactions.length} entries`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="text-[11px] text-cyan-600 hover:text-cyan-700 font-bold underline underline-offset-2"
+                >
+                  {t.clearSearch}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* State 1: No transactions in the app at all */}
         {recentTransactions.length === 0 ? (
           <div className="bg-white rounded-3xl p-8 text-center border border-slate-100 shadow-sm">
             <Receipt className="w-10 h-10 mx-auto text-slate-300 mb-3" />
             <p className="text-sm text-slate-500">{t.noTransactionsYet}</p>
           </div>
+        ) : filteredTransactions.length === 0 ? (
+          /* State 2: Active search returned 0 results */
+          <div className="bg-white rounded-3xl p-7 text-center border border-slate-100 shadow-sm space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center mx-auto">
+              <Search className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-800">
+                {t.noMatchingTransactions}
+              </h4>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
+                {isRtl
+                  ? `لم نجد أي عمليات مطابقة لـ "${searchQuery}" في التاريخ أو اسم الجهة أو الملاحظات`
+                  : `No entries matched "${searchQuery}" across date, party name, or notes`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="px-4 py-2 text-xs font-bold text-cyan-700 bg-cyan-50 hover:bg-cyan-100 rounded-xl transition-colors inline-block"
+            >
+              {t.clearSearch}
+            </button>
+          </div>
         ) : (
+          /* State 3: Display transactions */
           <div className="space-y-3">
-            {recentTransactions.slice(0, 6).map((tx) => {
+            {(searchQuery.trim() ? filteredTransactions : filteredTransactions.slice(0, 6)).map((tx) => {
               const isSale = tx.type === 'SALE_CREDIT';
               const isSupply = tx.type === 'SUPPLY_CREDIT';
               const isReceipt = tx.type === 'PAYMENT_RECEIVED';
@@ -380,6 +534,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         <span>•</span>
                         <span>{formatDate(tx.date, lang)}</span>
                       </div>
+                      {tx.notes && (
+                        <div className="text-[11px] text-slate-500 truncate mt-1 flex items-center gap-1">
+                          <FileText className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span className="truncate">{tx.notes}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -407,6 +567,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </div>
               );
             })}
+
+            {!searchQuery.trim() && filteredTransactions.length > 6 && (
+              <button
+                type="button"
+                onClick={onNavigateParties}
+                className="w-full py-2.5 px-4 text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-2xl transition-colors text-center shadow-2xs"
+              >
+                {isRtl
+                  ? `عرض جميع العمليات في سجل الحسابات (+${filteredTransactions.length - 6})`
+                  : `View all ledger entries (+${filteredTransactions.length - 6} more)`}
+              </button>
+            )}
           </div>
         )}
       </div>

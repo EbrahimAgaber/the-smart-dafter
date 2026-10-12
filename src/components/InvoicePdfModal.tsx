@@ -18,7 +18,7 @@ import {
 import QRCode from 'qrcode';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
+import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import type { jsPDF } from 'jspdf';
 import { generateInvoicePdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 import { generateZatcaTlvQrString } from '../utils/zatca';
@@ -49,6 +49,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [recipientPhone, setRecipientPhone] = useState<string>(party.phone || '');
 
   const isSale = transaction.type === 'SALE_CREDIT';
   const isSupply = transaction.type === 'SUPPLY_CREDIT';
@@ -172,7 +173,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
       if (result.success) {
         setShareFeedback(isRtl ? 'تم تجهيز ومشاركة ملف PDF بنجاح!' : 'PDF ready and shared!');
       } else {
-        alert(isRtl ? 'تعذر إنشاء ملف PDF. يرجى المحاولة مجدداً.' : 'Could not generate PDF. Please retry.');
+        setShareFeedback(isRtl ? 'تعذر إنشاء ملف PDF. يرجى المحاولة مجدداً.' : 'Could not generate PDF. Please retry.');
       }
     } catch (err: any) {
       console.error('Share error:', err);
@@ -182,12 +183,13 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   };
 
   const handleWhatsAppShare = () => {
-    const cleanPhone = sanitizePhoneNumber(party.phone);
+    const phoneToUse = recipientPhone.trim() || party.phone;
+    const cleanPhone = sanitizePhoneNumber(phoneToUse);
     const msg = buildWhatsAppMessage(party, transaction, profile, lang);
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${msg}`
       : `https://wa.me/?text=${msg}`;
-    window.open(url, '_blank');
+    openExternalUrl(url);
   };
 
   const handlePrint = () => {
@@ -556,6 +558,40 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
             </a>
           </div>
         )}
+
+        {/* Direct WhatsApp Instant Dispatch Bar */}
+        <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200/80 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-emerald-600" />
+              <span>{isRtl ? 'إرسال الفاتورة مباشرة للعميل عبر الواتساب' : 'Direct WhatsApp invoice dispatch'}</span>
+            </span>
+            <span className="text-[10px] text-emerald-700 font-mono">
+              {isRtl ? 'بدون كتابة رمز الدولة (+966)' : 'No country code required'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex items-center bg-white rounded-xl border border-emerald-200 px-2 py-1.5 shrink-0 shadow-2xs font-mono font-bold text-emerald-800 text-xs">
+              🇸🇦 +966
+            </div>
+            <input
+              type="tel"
+              value={recipientPhone}
+              onChange={(e) => setRecipientPhone(e.target.value)}
+              placeholder="05XXXXXXXX"
+              className="flex-1 bg-white text-slate-900 font-mono font-bold text-xs rounded-xl px-3 py-2 border border-emerald-200 focus:outline-none focus:border-emerald-500 shadow-2xs min-h-[38px]"
+            />
+            <button
+              type="button"
+              onClick={handleWhatsAppShare}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'إرسال الآن' : 'Send Now'}</span>
+            </button>
+          </div>
+        </div>
 
         {/* Bottom Fast Action Bar */}
         <div className="border-t border-slate-200 pt-3 flex items-center justify-between gap-2 text-xs shrink-0 flex-wrap">

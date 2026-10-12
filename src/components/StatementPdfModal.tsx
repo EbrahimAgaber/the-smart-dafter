@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
+import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import type { jsPDF } from 'jspdf';
 import { generateStatementPdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 
@@ -183,7 +183,7 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
       if (result.success) {
         setShareFeedback(isRtl ? 'تم تجهيز ومشاركة كشف الحساب كـ PDF!' : 'Statement PDF ready and shared!');
       } else {
-        alert(isRtl ? 'تعذر إنشاء كشف الحساب. يرجى المحاولة ثانية.' : 'Could not generate Statement. Please retry.');
+        setShareFeedback(isRtl ? 'تعذر إنشاء كشف الحساب. يرجى المحاولة ثانية.' : 'Could not generate Statement. Please retry.');
       }
     } catch (err) {
       console.error('Statement share error:', err);
@@ -198,7 +198,7 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${msg}`
       : `https://wa.me/?text=${msg}`;
-    window.open(url, '_blank');
+    openExternalUrl(url);
   };
 
   const handlePrint = () => {
