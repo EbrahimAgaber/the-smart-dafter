@@ -21,6 +21,7 @@ import {
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, formatShortDate } from '../utils/formatters';
+import { getDocumentNaming } from '../utils/messageEngine';
 
 interface DashboardViewProps {
   metrics: {
@@ -193,12 +194,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </header>
 
-      {/* Primary KPI Cards (Owed to Me vs I Owe) */}
-      <div id="kpi-cards-grid" className="grid grid-cols-2 gap-4">
+      {/* Primary KPI Cards (Owed to Me, I Owe, Cash Collected, Working Capital) */}
+      <div id="kpi-cards-grid" className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Card 1: Total Money Owed to Me (مستحقات - له) */}
         <div
           id="kpi-card-owed-to-me"
-          onClick={onNavigateParties}
+          onClick={() => onNavigateParties()}
           className="bg-white hover:bg-slate-50 cursor-pointer p-4 rounded-3xl border border-slate-100 shadow-sm transition-all group"
         >
           <div className="flex items-center justify-between mb-3">
@@ -210,10 +211,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
 
-          <div className="text-sm text-slate-500 font-medium">
+          <div className="text-sm text-slate-500 font-medium truncate">
             {t.totalReceivable}
           </div>
-          <div className="text-xl font-black text-slate-900 mt-1 tracking-tight font-mono">
+          <div className="text-lg sm:text-xl font-black text-slate-900 mt-1 tracking-tight font-mono">
             {formatCurrency(metrics.totalOwedToMe, currency, lang)}
           </div>
         </div>
@@ -221,7 +222,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Card 2: Total Money I Owe (التزامات - عليه) */}
         <div
           id="kpi-card-i-owe"
-          onClick={onNavigateParties}
+          onClick={() => onNavigateParties()}
           className="bg-white hover:bg-slate-50 cursor-pointer p-4 rounded-3xl border border-slate-100 shadow-sm transition-all group"
         >
           <div className="flex items-center justify-between mb-3">
@@ -233,39 +234,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
 
-          <div className="text-sm text-slate-500 font-medium">
+          <div className="text-sm text-slate-500 font-medium truncate">
             {t.totalPayable}
           </div>
-          <div className="text-xl font-black text-slate-900 mt-1 tracking-tight font-mono">
+          <div className="text-lg sm:text-xl font-black text-slate-900 mt-1 tracking-tight font-mono">
             {formatCurrency(metrics.totalIOwe, currency, lang)}
           </div>
         </div>
-      </div>
 
-      {/* Cash Collected Today Card */}
-      <div
-        id="kpi-card-cash-collected"
-        className="bg-cyan-50/50 p-4 rounded-3xl border border-cyan-100 shadow-sm flex items-center justify-between"
-      >
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-cyan-100 text-cyan-600 flex items-center justify-center">
-            <Coins className="w-6 h-6" />
+        {/* Card 3: Cash Collected Today */}
+        <div
+          id="kpi-card-cash-collected"
+          className="bg-white hover:bg-slate-50 p-4 rounded-3xl border border-slate-100 shadow-sm transition-all"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center">
+              <Coins className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] font-bold text-cyan-700 bg-cyan-50 px-2 py-1 rounded-lg">
+              {isRtl ? 'تحصيل اليوم' : 'Today'}
+            </span>
           </div>
-          <div>
-            <div className="text-sm text-slate-600 font-medium">
-              {t.cashCollectedToday}
-            </div>
-            <div className="text-lg font-black text-slate-900 font-mono">
-              {formatCurrency(metrics.cashCollectedToday, currency, lang)}
-            </div>
+          <div className="text-sm text-slate-500 font-medium truncate">
+            {t.cashCollectedToday}
+          </div>
+          <div className="text-lg sm:text-xl font-black text-slate-900 mt-1 tracking-tight font-mono">
+            {formatCurrency(metrics.cashCollectedToday, currency, lang)}
           </div>
         </div>
 
-        <div className="text-end">
-          <span className="text-xs font-bold text-cyan-700 bg-cyan-100/80 px-3 py-1.5 rounded-xl flex items-center gap-1">
-            <Sparkles className="w-3.5 h-3.5" />
-            {t.cashCollectedTodayDesc}
-          </span>
+        {/* Card 4: Working Capital / Net Liquidity */}
+        <div
+          id="kpi-card-working-capital"
+          className="bg-white hover:bg-slate-50 p-4 rounded-3xl border border-slate-100 shadow-sm transition-all"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg">
+              {isRtl ? 'الصافي' : 'Net'}
+            </span>
+          </div>
+          <div className="text-sm text-slate-500 font-medium truncate">
+            {isRtl ? 'صافي رأس المال' : 'Net Capital'}
+          </div>
+          <div className="text-lg sm:text-xl font-black text-slate-900 mt-1 tracking-tight font-mono">
+            {formatCurrency(metrics.netWorkingCapital, currency, lang)}
+          </div>
         </div>
       </div>
 
@@ -274,12 +290,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <h3 className="text-sm font-bold text-slate-900 px-1">
           {t.quickActions}
         </h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* Quick 1: New Credit Sale */}
           <button
             id="btn-quick-credit-sale"
             onClick={onOpenNewSale}
-            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100"
+            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100 min-h-[96px]"
           >
             <div className="w-10 h-10 rounded-2xl bg-green-50 text-green-600 flex items-center justify-center">
               <ShoppingBag className="w-5 h-5" />
@@ -293,7 +309,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             id="btn-quick-receive-payment"
             onClick={onOpenReceivePayment}
-            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100"
+            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100 min-h-[96px]"
           >
             <div className="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center">
               <ArrowDownLeft className="w-5 h-5" />
@@ -307,7 +323,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             id="btn-quick-supply-intake"
             onClick={onOpenNewSupply}
-            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100"
+            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100 min-h-[96px]"
           >
             <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center">
               <Truck className="w-5 h-5" />
@@ -321,7 +337,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <button
             id="btn-quick-pay-distributor"
             onClick={onOpenPayDistributor}
-            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100"
+            className="flex flex-col items-center justify-center gap-2 p-4 rounded-3xl bg-white hover:bg-slate-50 text-slate-900 font-bold text-sm shadow-sm transition-all border border-slate-100 min-h-[96px]"
           >
             <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-500 flex items-center justify-center">
               <ArrowUpRight className="w-5 h-5" />
@@ -333,72 +349,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Regional Receivables Distribution Widget */}
-      {regionalReceivables.length > 0 && (
-        <div id="regional-receivables-section" className="space-y-3 pt-2">
+      {/* Dual Column Layout on Desktop: Main Activity & Regional Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2 items-start">
+        {/* Column 1: Recent Transactions Section with Global Search Bar (Takes 7-8 cols on lg) */}
+        <div id="recent-activity-section" className="lg:col-span-7 xl:col-span-8 space-y-3">
           <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-cyan-600" />
+            <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold text-slate-900">
-                {t.regionalReceivables}
+                {searchQuery.trim()
+                  ? (isRtl ? `نتائج البحث (${filteredTransactions.length})` : `Search Results (${filteredTransactions.length})`)
+                  : t.recentActivity}
               </h3>
+              {searchQuery.trim() && (
+                <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full border border-cyan-200">
+                  {isRtl ? 'تصفية نشطة' : 'Filter active'}
+                </span>
+              )}
             </div>
             <button
-              onClick={onNavigateParties}
-              className="text-xs text-cyan-600 hover:text-cyan-700 font-semibold"
+              id="btn-dashboard-view-parties"
+              onClick={() => onNavigateParties()}
+              className="text-sm text-cyan-600 hover:text-cyan-700 font-semibold flex items-center gap-1 transition-colors"
             >
-              {t.viewAll}
+              <span>{t.viewAll}</span>
+              {isRtl ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </button>
           </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {regionalReceivables.slice(0, 4).map((r) => (
-              <div
-                key={r.region}
-                onClick={() => onNavigateParties(r.region)}
-                className="bg-white hover:bg-slate-50 cursor-pointer p-3.5 rounded-2xl border border-slate-100 shadow-2xs transition-all group"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs font-bold text-slate-800 truncate group-hover:text-cyan-700">
-                    {r.region}
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-400 font-mono">
-                    {r.count} {isRtl ? 'عملاء' : 'clients'}
-                  </span>
-                </div>
-                <div className="text-sm font-black text-rose-600 font-mono">
-                  {formatCurrency(r.totalDebt, currency, lang)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Transactions Section with Global Search Bar */}
-      <div id="recent-activity-section" className="space-y-3 pt-2">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-slate-900">
-              {searchQuery.trim()
-                ? (isRtl ? `نتائج البحث (${filteredTransactions.length})` : `Search Results (${filteredTransactions.length})`)
-                : t.recentActivity}
-            </h3>
-            {searchQuery.trim() && (
-              <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-full border border-cyan-200">
-                {isRtl ? 'تصفية نشطة' : 'Filter active'}
-              </span>
-            )}
-          </div>
-          <button
-            id="btn-dashboard-view-parties"
-            onClick={onNavigateParties}
-            className="text-sm text-cyan-600 hover:text-cyan-700 font-semibold flex items-center gap-1 transition-colors"
-          >
-            <span>{t.viewAll}</span>
-            {isRtl ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
-        </div>
 
         {/* Global Transaction Search Bar */}
         {recentTransactions.length > 0 && (
@@ -476,8 +452,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </h4>
               <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto leading-relaxed">
                 {isRtl
-                  ? `لم نجد أي عمليات مطابقة لـ "${searchQuery}" في التاريخ أو اسم الجهة أو الملاحظات`
-                  : `No entries matched "${searchQuery}" across date, party name, or notes`}
+                  ? `لم نجد أي عمليات مطابقة لـ "${searchQuery}" في رقم السند أو اسم الجهة أو الملاحظات`
+                  : `No records matched "${searchQuery}" in receipt number, party name, or notes`}
               </p>
             </div>
             <button
@@ -492,10 +468,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           /* State 3: Display transactions */
           <div className="space-y-3">
             {(searchQuery.trim() ? filteredTransactions : filteredTransactions.slice(0, 6)).map((tx) => {
-              const isSale = tx.type === 'SALE_CREDIT';
-              const isSupply = tx.type === 'SUPPLY_CREDIT';
-              const isReceipt = tx.type === 'PAYMENT_RECEIVED';
               const partyName = getPartyName(tx.partyId);
+              const txNaming = getDocumentNaming(tx.type, lang, Boolean(tx.taxAmount && tx.taxAmount > 0));
 
               return (
                 <div
@@ -507,29 +481,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <div className="flex items-center gap-3 min-w-0">
                     {/* Icon Badge */}
                     <div
-                      className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
-                        isSale
-                          ? 'bg-green-50 text-green-600'
-                          : isReceipt
-                          ? 'bg-cyan-50 text-cyan-600'
-                          : isSupply
-                          ? 'bg-amber-50 text-amber-500'
-                          : 'bg-purple-50 text-purple-500'
-                      }`}
+                      className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 text-base ${txNaming.badgeBg} ${txNaming.badgeText} border ${txNaming.badgeBorder}`}
                     >
-                      {isSale && <ShoppingBag className="w-5 h-5" />}
-                      {isReceipt && <ArrowDownLeft className="w-5 h-5" />}
-                      {isSupply && <Truck className="w-5 h-5" />}
-                      {tx.type === 'PAYMENT_PAID' && <ArrowUpRight className="w-5 h-5" />}
+                      <span>{txNaming.icon}</span>
                     </div>
 
                     <div className="min-w-0">
                       <div className="text-sm font-bold text-slate-900 truncate">
                         {partyName}
                       </div>
-                      <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1">
-                        <span className="font-mono text-slate-400">
+                      <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-1 flex-wrap">
+                        <span className="font-mono text-slate-400 font-bold">
                           {tx.receiptNumber}
+                        </span>
+                        <span>•</span>
+                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${txNaming.badgeBg} ${txNaming.badgeText}`}>
+                          {txNaming.shortLabel}
                         </span>
                         <span>•</span>
                         <span>{formatDate(tx.date, lang)}</span>
@@ -553,12 +520,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {isRtl ? `مسدد: ${formatCurrency(tx.paidAmount, currency, lang)}` : `Paid: ${formatCurrency(tx.paidAmount, currency, lang)}`}
                       </div>
                     )}
-                    {(isSale || isSupply) && tx.totalAmount - tx.paidAmount > 0 && (
+                    {tx.type === 'QUOTATION' && (
+                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
+                        {isRtl ? 'عرض سعر' : 'Quotation'}
+                      </span>
+                    )}
+                    {tx.type === 'RETURN_SALE' && (
+                      <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md inline-block mt-1 font-mono">
+                        {isRtl ? `مرتجع: -${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}` : `Return: -${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}`}
+                      </span>
+                    )}
+                    {(tx.type === 'SALE_CREDIT' || tx.type === 'SUPPLY_CREDIT') && tx.totalAmount - tx.paidAmount > 0 && (
                       <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md inline-block mt-1 font-mono">
                         {isRtl ? `آجل: +${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}` : `Debt: +${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}`}
                       </span>
                     )}
-                    {isReceipt && (
+                    {tx.type === 'PAYMENT_RECEIVED' && (
                       <span className="text-[11px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md inline-block mt-1">
                         {isRtl ? `تم التحصيل` : `Collected`}
                       </span>
@@ -571,7 +548,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             {!searchQuery.trim() && filteredTransactions.length > 6 && (
               <button
                 type="button"
-                onClick={onNavigateParties}
+                onClick={() => onNavigateParties()}
                 className="w-full py-2.5 px-4 text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-2xl transition-colors text-center shadow-2xs"
               >
                 {isRtl
@@ -582,6 +559,53 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Column 2: Regional Receivables Distribution Widget (Takes 4-5 cols on lg) */}
+      <div id="regional-receivables-section" className="lg:col-span-5 xl:col-span-4 space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-1.5">
+            <MapPin className="w-4 h-4 text-cyan-600" />
+            <h3 className="text-sm font-bold text-slate-900">
+              {t.regionalReceivables}
+            </h3>
+          </div>
+          <button
+            onClick={() => onNavigateParties()}
+            className="text-xs text-cyan-600 hover:text-cyan-700 font-semibold"
+          >
+            {t.viewAll}
+          </button>
+        </div>
+
+        {regionalReceivables.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+            {regionalReceivables.slice(0, 6).map((r) => (
+              <div
+                key={r.region}
+                onClick={() => onNavigateParties(r.region)}
+                className="bg-white hover:bg-slate-50 cursor-pointer p-3.5 rounded-2xl border border-slate-100 shadow-2xs transition-all group"
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-bold text-slate-800 truncate group-hover:text-cyan-700">
+                    {r.region}
+                  </span>
+                  <span className="text-[10px] font-semibold text-slate-400 font-mono">
+                    {r.count} {isRtl ? 'عملاء' : 'clients'}
+                  </span>
+                </div>
+                <div className="text-sm font-black text-rose-600 font-mono">
+                  {formatCurrency(r.totalDebt, currency, lang)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-6 bg-white rounded-2xl border border-slate-100 text-center text-slate-400 text-xs">
+            {isRtl ? 'لا توجد ديون مستحقة حسب الأحياء حالياً' : 'No outstanding regional debt'}
+          </div>
+        )}
+      </div>
     </div>
-  );
+  </div>
+);
 };

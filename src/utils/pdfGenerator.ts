@@ -1,6 +1,8 @@
 import { jsPDF } from 'jspdf';
 import { BusinessProfile, Transaction, Party, Language } from '../types';
 import { formatCurrency, formatDate, sanitizePhoneNumber } from './formatters';
+import { getDocumentNaming } from './messageEngine';
+import { verifyPdfBlobIntegrity, formatBlobSize, type PdfIntegrityResult, type IntegrityCheckStatus } from './pdfIntegrity';
 
 export interface PdfExportResult {
   success: boolean;
@@ -245,10 +247,8 @@ export async function generateStatementPdf(
 
     let desc = tx.notes;
     if (!desc) {
-      if (tx.type === 'SALE_CREDIT') desc = isRtl ? 'فاتورة بيع آجل' : 'Credit Sale';
-      else if (tx.type === 'PAYMENT_RECEIVED') desc = isRtl ? 'سند قبض مالي' : 'Payment Receipt';
-      else if (tx.type === 'SUPPLY_CREDIT') desc = isRtl ? 'سند توريد آجل' : 'Supply Credit';
-      else desc = isRtl ? 'سند صرف نقدي' : 'Payment Voucher';
+      const txNaming = getDocumentNaming(tx.type, lang, Boolean(tx.taxAmount && tx.taxAmount > 0));
+      desc = txNaming.shortLabel;
     }
     if (tx.isVoided) {
       desc = `[${isRtl ? 'ملغاة' : 'VOIDED'}] ${desc}`;
@@ -678,20 +678,8 @@ export async function generateInvoicePdf(
   const isRtl = lang === 'ar';
   const currency = profile.currency || 'SAR';
 
-  const isSale = transaction.type === 'SALE_CREDIT';
-  const isSupply = transaction.type === 'SUPPLY_CREDIT';
-  const isReceipt = transaction.type === 'PAYMENT_RECEIVED';
-  const isPayment = transaction.type === 'PAYMENT_PAID';
-
-  const docTitle = isSale
-    ? isVatApplied
-      ? (isRtl ? 'فاتورة ضريبية مبسطة' : 'Simplified Tax Invoice')
-      : (isRtl ? 'فاتورة بيع بالآجل' : 'Credit Sale Invoice')
-    : isSupply
-    ? (isRtl ? 'سند توريد بالآجل' : 'Credit Supply Note')
-    : isReceipt
-    ? (isRtl ? 'سند قبض مالي' : 'Payment Receipt Voucher')
-    : (isRtl ? 'سند صرف نقدي' : 'Payment Voucher');
+  const naming = getDocumentNaming(transaction.type, lang, isVatApplied);
+  const docTitle = naming.title;
 
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -756,7 +744,7 @@ export async function generateInvoicePdf(
   const badgeW = 240;
   const badgeH = 46;
   const badgeX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - badgeW;
-  const badgeFill = isSale ? '#0f172a' : isReceipt ? '#047857' : isPayment ? '#b91c1c' : '#0284c7';
+  const badgeFill = naming.color || '#0f172a';
   drawRoundedRect(ctx, badgeX, currentY, badgeW, badgeH, 8, badgeFill);
 
   ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
@@ -804,9 +792,7 @@ export async function generateInvoicePdf(
   ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
   ctx.fillText(
-    isSale || isReceipt
-      ? (isRtl ? 'فاتورة موجهة إلى العميل:' : 'BILL TO:')
-      : (isRtl ? 'سند موجه إلى المورد:' : 'SUPPLIER:'),
+    naming.recipientLabel,
     pTextX,
     currentY + 26
   );
@@ -941,7 +927,7 @@ export async function generateInvoicePdf(
     ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', PAGE_WIDTH / 2, currentY + 34);
 
     ctx.font = 'bold 32px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = isReceipt ? '#047857' : '#b91c1c';
+    ctx.fillStyle = transaction.type === 'PAYMENT_RECEIVED' ? '#047857' : '#b91c1c';
     ctx.fillText(
       formatCurrency(transaction.paidAmount || transaction.totalAmount, currency, lang),
       PAGE_WIDTH / 2,
@@ -1204,10 +1190,14 @@ export async function sharePdfFile(
   return shareOrDownloadPdf(res?.doc || null, fileName, title, res?.blob || null);
 }
 
+export { verifyPdfBlobIntegrity, formatBlobSize } from './pdfIntegrity';
+export type { PdfIntegrityResult, IntegrityCheckStatus } from './pdfIntegrity';
+
 export default {
   generateInvoicePdf,
   generateStatementPdf,
   shareOrDownloadPdf,
   exportElementToPdf,
   sharePdfFile,
+  verifyPdfBlobIntegrity,
 };

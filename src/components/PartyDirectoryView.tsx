@@ -56,13 +56,14 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
   const [activeSegment, setActiveSegment] = useState<PartyType>('CUSTOMER');
   const [searchQuery, setSearchQuery] = useState('');
   const [balanceFilter, setBalanceFilter] = useState<'all' | 'debtors' | 'settled'>('all');
-  const [selectedRegion, setSelectedRegion] = useState<string>(initialRegion || 'all');
+  const [selectedRegion, setSelectedRegion] = useState<string>(
+    typeof initialRegion === 'string' && initialRegion.trim() ? initialRegion.trim() : 'all'
+  );
   const [sortBy, setSortBy] = useState<'highestDebt' | 'lowestDebt' | 'name' | 'recent'>('highestDebt');
 
   useEffect(() => {
-    if (initialRegion) {
-      setSelectedRegion(initialRegion);
-    }
+    const clean = typeof initialRegion === 'string' && initialRegion.trim() ? initialRegion.trim() : 'all';
+    setSelectedRegion(clean);
   }, [initialRegion]);
 
   // Modal State for Adding/Editing Party
@@ -173,10 +174,11 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
     return parties
       .filter((p) => p.type === activeSegment)
       .filter((p) => {
-        if (selectedRegion === 'all') return true;
+        const regStr = typeof selectedRegion === 'string' ? selectedRegion : 'all';
+        if (regStr === 'all') return true;
         const partyReg = (p.region || '').toLowerCase();
         const partyAddr = (p.address || '').toLowerCase();
-        const target = selectedRegion.toLowerCase();
+        const target = regStr.toLowerCase();
         return partyReg === target || partyAddr.includes(target);
       })
       .filter((p) => {
@@ -400,7 +402,10 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
             </button>
             {availableRegions.map((reg) => {
               const count = getRegionPartyCount(reg);
-              const isSelected = selectedRegion.toLowerCase() === reg.toLowerCase();
+              const isSelected =
+                typeof selectedRegion === 'string' &&
+                typeof reg === 'string' &&
+                selectedRegion.toLowerCase() === reg.toLowerCase();
               return (
                 <button
                   key={reg}
@@ -475,7 +480,7 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
               </div>
             </div>
 
-            {(selectedRegion !== 'all' || balanceFilter !== 'all' || searchQuery.trim() !== '' || sortBy !== 'highestDebt') && (
+            {((typeof selectedRegion === 'string' && selectedRegion !== 'all') || balanceFilter !== 'all' || searchQuery.trim() !== '' || sortBy !== 'highestDebt') && (
               <button
                 onClick={() => {
                   setSelectedRegion('all');
@@ -497,14 +502,14 @@ export const PartyDirectoryView: React.FC<PartyDirectoryViewProps> = ({
       <div className="bg-white/90 p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
           <span className="text-slate-500 font-medium">
-            {selectedRegion !== 'all'
+            {typeof selectedRegion === 'string' && selectedRegion !== 'all'
               ? `${isRtl ? 'مستحقات' : 'Outstanding in'} (${selectedRegion})`
               : activeSegment === 'CUSTOMER'
               ? t.totalReceivable
               : t.totalPayable}
             :
           </span>
-          {selectedRegion !== 'all' && (
+          {typeof selectedRegion === 'string' && selectedRegion !== 'all' && (
             <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md border border-cyan-200">
               {filteredParties.length} {isRtl ? 'جهة' : 'parties'}
             </span>

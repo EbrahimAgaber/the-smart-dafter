@@ -28,7 +28,7 @@ import { formatCurrency, sanitizePhoneNumber } from '../utils/formatters';
 import { playSuccessChime, getAvatarColorClass } from '../utils/speechFeedback';
 
 interface InvoiceCreatorModalProps {
-  type: 'SALE_CREDIT' | 'SUPPLY_CREDIT';
+  type: TransactionType;
   parties: Party[];
   products: Product[];
   profile: BusinessProfile;
@@ -50,6 +50,8 @@ interface InvoiceCreatorModalProps {
     paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
     customerPhone?: string;
     autoSendWhatsApp?: boolean;
+    dueDate?: string;
+    supplierInvoiceAttachment?: string;
   }) => void;
   onAddParty?: (partyData: Omit<Party, 'id' | 'currentBalance' | 'createdAt'>) => Party;
   onAddProduct?: (prodData: Omit<Product, 'id'>) => Product;
@@ -70,7 +72,9 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   const t = getTranslation(lang);
   const currency = profile.currency || 'SAR';
   const isRtl = lang === 'ar';
-  const isSale = type === 'SALE_CREDIT';
+
+  const [docMode, setDocMode] = useState<TransactionType>(type);
+  const isSale = docMode === 'SALE_CREDIT' || docMode === 'QUOTATION' || docMode === 'RETURN_SALE';
   const targetPartyType = isSale ? 'CUSTOMER' : 'DISTRIBUTOR';
 
   // Eligible parties by role
@@ -134,6 +138,9 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   const [discountInput, setDiscountInput] = useState<string>('0');
   const [applyVat, setApplyVat] = useState<boolean>(profile.isVatEnabled ?? true);
   const [notes, setNotes] = useState<string>('');
+  const [dueDate, setDueDate] = useState<string>('');
+  const [supplierInvoicePhoto, setSupplierInvoicePhoto] = useState<string | null>(null);
+  const [returnReason, setReturnReason] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'CHEQUE'>('CASH');
   const [validationError, setValidationError] = useState<string>('');
 
@@ -246,8 +253,12 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   }, [paidNowInput]);
 
   const remainingBalanceDelta = useMemo(() => {
+    if (docMode === 'QUOTATION') return 0;
+    if (docMode === 'RETURN_SALE') {
+      return -Math.max(0, Math.round((totalAmount - paidAmount) * 100) / 100);
+    }
     return Math.max(0, Math.round((totalAmount - paidAmount) * 100) / 100);
-  }, [totalAmount, paidAmount]);
+  }, [totalAmount, paidAmount, docMode]);
 
   // Rapid One-Tap Product Add or Increment
   const handleQuickAddProduct = (prod: Product, targetQty = 1) => {
@@ -468,6 +479,48 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
     };
   }, [isScanningBarcode, products]);
 
+  // Hardware USB/Bluetooth Barcode Scanner Auto-Detection
+  useEffect(() => {
+    let buffer = '';
+    let lastKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+      const diff = now - lastKeyTime;
+      lastKeyTime = now;
+
+      if (e.key === 'Enter') {
+        if (buffer.length >= 3 && diff < 90) {
+          e.preventDefault();
+          const code = buffer.trim();
+          const matchedProd = products.find((p) => p.barcode === code);
+          if (matchedProd) {
+            handleQuickAddProduct(matchedProd);
+            playSuccessChime();
+            setBarcodeScanFeedback(`${matchedProd.name} (+1)`);
+            setTimeout(() => setBarcodeScanFeedback(''), 2500);
+          } else {
+            setProductSearchQuery(code);
+            setBarcodeScanFeedback(code);
+            setTimeout(() => setBarcodeScanFeedback(''), 2500);
+          }
+          buffer = '';
+        } else {
+          buffer = '';
+        }
+      } else if (e.key.length === 1) {
+        if (diff > 120) {
+          buffer = e.key;
+        } else {
+          buffer += e.key;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [products]);
+
   // Form submit
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -528,9 +581,13 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
 
     playSuccessChime();
 
+    const finalNotes = returnReason
+      ? `${isRtl ? 'سبب الإرجاع: ' : 'Return Reason: '}${returnReason}${notes.trim() ? ` - ${notes.trim()}` : ''}`
+      : notes.trim();
+
     onSubmit({
       partyId: selectedPartyId,
-      type,
+      type: docMode,
       items: validItems,
       subtotalBeforeTax: netBeforeTax,
       discountAmount,
@@ -539,10 +596,12 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       totalAmount,
       paidAmount,
       remainingBalanceDelta,
-      notes: notes.trim(),
+      notes: finalNotes,
       paymentMethod,
       customerPhone: customerPhone.trim(),
       autoSendWhatsApp,
+      dueDate: dueDate || undefined,
+      supplierInvoiceAttachment: supplierInvoicePhoto || undefined,
     });
   };
 
@@ -612,6 +671,57 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
         )}
 
         <form onSubmit={handleFormSubmit} className="space-y-4 flex-1">
+          {/* Document Type Mode Switcher */}
+          {targetPartyType === 'CUSTOMER' && (
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setDocMode('SALE_CREDIT')}
+                className={`py-2 px-1.5 rounded-xl font-bold transition-all text-center min-h-[38px] ${
+                  docMode === 'SALE_CREDIT'
+                    ? 'bg-white text-slate-900 shadow-2xs border border-slate-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t.docModeInvoice}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDocMode('QUOTATION')}
+                className={`py-2 px-1.5 rounded-xl font-bold transition-all text-center min-h-[38px] ${
+                  docMode === 'QUOTATION'
+                    ? 'bg-white text-indigo-700 shadow-2xs border border-indigo-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t.docModeQuotation}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDocMode('RETURN_SALE')}
+                className={`py-2 px-1.5 rounded-xl font-bold transition-all text-center min-h-[38px] ${
+                  docMode === 'RETURN_SALE'
+                    ? 'bg-white text-rose-700 shadow-2xs border border-rose-200'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t.docModeReturn}
+              </button>
+            </div>
+          )}
+
+          {/* Quotation / Credit Note Guidance Notice */}
+          {docMode === 'QUOTATION' && (
+            <div className="p-2.5 bg-indigo-50/80 rounded-xl border border-indigo-200 text-indigo-900 text-[11px] font-semibold leading-relaxed">
+              ℹ️ {t.quotationNotice}
+            </div>
+          )}
+          {docMode === 'RETURN_SALE' && (
+            <div className="p-2.5 bg-rose-50/80 rounded-xl border border-rose-200 text-rose-900 text-[11px] font-semibold leading-relaxed">
+              ⚠️ {t.creditNoteNotice}
+            </div>
+          )}
+
           {/* Tax / Standard Invoice Selector */}
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs">
             <button
@@ -832,6 +942,78 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                 </div>
               </label>
             </div>
+
+            {/* Payment Due Date for Credit Sales */}
+            {docMode === 'SALE_CREDIT' && (
+              <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between gap-2">
+                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+                  <span>📅</span>
+                  <span>{t.dueDate}</span>
+                </label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="bg-white text-slate-900 font-mono text-xs rounded-xl px-3 py-1.5 border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs"
+                />
+              </div>
+            )}
+
+            {/* Return Reason for Credit Notes */}
+            {docMode === 'RETURN_SALE' && (
+              <div className="pt-2 border-t border-rose-200/60 space-y-1">
+                <label className="text-[11px] font-bold text-rose-800">
+                  {t.returnReason}
+                </label>
+                <input
+                  type="text"
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  placeholder={isRtl ? 'مثال: بضاعة تالفة، مقاس غير مناسب، رغبة العميل...' : 'e.g. Damaged goods, return...'}
+                  className="w-full bg-white text-slate-900 text-xs rounded-xl px-3 py-2 border border-rose-200 focus:outline-none focus:border-rose-500 shadow-2xs"
+                />
+              </div>
+            )}
+
+            {/* Attach Supplier Invoice for Supply Intake */}
+            {docMode === 'SUPPLY_CREDIT' && (
+              <div className="pt-2 border-t border-amber-200/60 space-y-1.5">
+                <label className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{t.attachSupplierInvoice}</span>
+                </label>
+                {supplierInvoicePhoto ? (
+                  <div className="flex items-center gap-2 p-2 bg-white rounded-xl border border-amber-200">
+                    <img src={supplierInvoicePhoto} alt="Supplier Invoice" className="w-12 h-12 object-cover rounded-lg" />
+                    <span className="text-xs font-bold text-emerald-700 flex-1">{isRtl ? 'تم إرفاق فاتورة المورد' : 'Supplier invoice attached'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSupplierInvoicePhoto(null)}
+                      className="text-xs text-rose-600 hover:text-rose-800 font-bold px-2 py-1"
+                    >
+                      {isRtl ? 'حذف' : 'Remove'}
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          setSupplierInvoicePhoto(evt.target?.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-amber-100 file:text-amber-800 hover:file:bg-amber-200"
+                  />
+                )}
+              </div>
+            )}
           </div>
 
           {/* Section 2: 100+ Products Solution (Catalog Shelf + Multi-Category + Barcode) */}

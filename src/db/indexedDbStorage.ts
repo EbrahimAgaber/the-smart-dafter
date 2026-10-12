@@ -159,6 +159,42 @@ export class IndexedDBStorage {
       }
     });
   }
+
+  public async testHealth(): Promise<{ operational: boolean; latencyMs: number; error?: string }> {
+    const start = Date.now();
+    try {
+      const db = await this.dbPromise;
+      if (!db) {
+        return { operational: false, latencyMs: Date.now() - start, error: 'IndexedDB unavailable or blocked' };
+      }
+      return new Promise((resolve) => {
+        try {
+          const tx = db.transaction(['metadata'], 'readwrite');
+          const metaStore = tx.objectStore('metadata');
+          const probeKey = '__health_probe__';
+          metaStore.put({ key: probeKey, value: Date.now() });
+
+          tx.oncomplete = () => {
+            try {
+              const cleanTx = db.transaction(['metadata'], 'readwrite');
+              cleanTx.objectStore('metadata').delete(probeKey);
+            } catch {
+              // Non-critical cleanup
+            }
+            resolve({ operational: true, latencyMs: Math.max(1, Date.now() - start) });
+          };
+
+          tx.onerror = () => {
+            resolve({ operational: false, latencyMs: Date.now() - start, error: 'IndexedDB transaction error' });
+          };
+        } catch (e: any) {
+          resolve({ operational: false, latencyMs: Date.now() - start, error: e?.message || 'IndexedDB write error' });
+        }
+      });
+    } catch (e: any) {
+      return { operational: false, latencyMs: Date.now() - start, error: e?.message || 'IndexedDB open error' };
+    }
+  }
 }
 
 export const idbStorage = new IndexedDBStorage();

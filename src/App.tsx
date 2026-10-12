@@ -113,6 +113,34 @@ export default function App() {
     }
   }, [profile.name, licenseStatus.isActive]);
 
+  // Support direct receipt/invoice or statement viewing via URL link (e.g. from WhatsApp)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const receiptParam = urlParams.get('receipt') || urlParams.get('inv') || urlParams.get('doc');
+    const statementParam = urlParams.get('statement') || urlParams.get('party');
+
+    if (receiptParam && transactions.length > 0) {
+      const tx = transactions.find(
+        (t) => t.receiptNumber.toLowerCase() === receiptParam.toLowerCase() || t.id === receiptParam
+      );
+      if (tx) {
+        const p = store.getPartyById(tx.partyId);
+        if (p) {
+          setActiveTxForPdf(tx);
+          setModalParty(p);
+          setActiveModal('invoice-pdf');
+        }
+      }
+    } else if (statementParam && parties.length > 0) {
+      const p = parties.find((party) => party.id === statementParam || party.name === statementParam);
+      if (p) {
+        setSelectedPartyForLedger(p);
+        setActiveModal('statement-pdf');
+      }
+    }
+  }, [transactions, parties, store]);
+
   // Refresh local state from store and license manager
   const refreshStoreData = useCallback(() => {
     setParties(store.getParties());
@@ -456,7 +484,8 @@ export default function App() {
             }
           }}
           onNavigateParties={(region) => {
-            setSelectedRegionFilter(region || 'all');
+            const cleanRegion = typeof region === 'string' && region.trim() ? region.trim() : 'all';
+            setSelectedRegionFilter(cleanRegion);
             setActiveTab('parties');
           }}
         />

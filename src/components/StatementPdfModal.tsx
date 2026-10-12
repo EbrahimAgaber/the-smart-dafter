@@ -11,12 +11,15 @@ import {
   Copy,
   Check,
   Share2,
+  FileText,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import type { jsPDF } from 'jspdf';
 import { generateStatementPdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
+import { sharePdfToWhatsApp } from '../utils/whatsappShare';
+import { getDocumentNaming } from '../utils/messageEngine';
 
 interface StatementPdfModalProps {
   party: Party;
@@ -42,6 +45,7 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [recipientPhone, setRecipientPhone] = useState<string>(party.phone || '');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
@@ -154,6 +158,11 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
   };
 
   const handleSharePdf = async () => {
+    const targetPhone = (recipientPhone || '').trim() || party.phone || '';
+    if (targetPhone) {
+      return handleSendPdfToWhatsApp();
+    }
+
     setIsGenerating(true);
     setShareFeedback(null);
     try {
@@ -192,13 +201,121 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
     }
   };
 
-  const handleWhatsAppShare = () => {
-    const cleanPhone = sanitizePhoneNumber(party.phone);
-    const msg = buildWhatsAppMessage(party, null, profile, lang);
-    const url = cleanPhone
-      ? `https://wa.me/${cleanPhone}?text=${msg}`
-      : `https://wa.me/?text=${msg}`;
-    openExternalUrl(url);
+  const handleSendPdfToWhatsApp = async () => {
+    setIsGenerating(true);
+    setShareFeedback(null);
+    try {
+      let blob = pdfBlob;
+      let doc: jsPDF | null = null;
+      if (!blob) {
+        doc = await generateStatementPdf({
+          profile,
+          party,
+          transactions: filteredTransactions,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          lang,
+        });
+        blob = doc.output('blob');
+        setPdfBlob(blob);
+      }
+
+      setIsGenerating(false);
+
+      const res = await sharePdfToWhatsApp({
+        pdfBlob: blob,
+        doc,
+        fileName: pdfFileName,
+        party,
+        transaction: null,
+        profile,
+        lang,
+        recipientPhone,
+        mode: 'file',
+      });
+
+      if (res.method === 'native_file_share') {
+        setShareFeedback(
+          isRtl
+            ? 'تم فتح نافذة مشاركة كشف الحساب كـ PDF مباشرة! اختر واتساب للإرسال.'
+            : 'Opened native share sheet with Statement PDF attached! Select WhatsApp.'
+        );
+      } else if (res.cleanPhone) {
+        setShareFeedback(
+          isRtl
+            ? `تم تنزيل كشف الحساب (${res.fileName}) بجهازك وفتح محادثة العميل (${res.cleanPhone}) في واتساب.`
+            : `Downloaded Statement PDF (${res.fileName}) and opened WhatsApp chat with ${res.cleanPhone}.`
+        );
+      } else {
+        setShareFeedback(
+          isRtl
+            ? `تم تنزيل كشف الحساب (${res.fileName}) بجهازك وفتح واتساب.`
+            : `Downloaded ${res.fileName} and opened WhatsApp.`
+        );
+      }
+    } catch (err) {
+      console.error('handleSendPdfToWhatsApp error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSystemSharePdf = async () => {
+    setIsGenerating(true);
+    setShareFeedback(null);
+    try {
+      let blob = pdfBlob;
+      let doc: jsPDF | null = null;
+      if (!blob) {
+        doc = await generateStatementPdf({
+          profile,
+          party,
+          transactions: filteredTransactions,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          lang,
+        });
+        blob = doc.output('blob');
+        setPdfBlob(blob);
+      }
+
+      setIsGenerating(false);
+
+      const res = await sharePdfToWhatsApp({
+        pdfBlob: blob,
+        doc,
+        fileName: pdfFileName,
+        party,
+        transaction: null,
+        profile,
+        lang,
+        recipientPhone,
+        mode: 'system_share',
+      });
+
+      if (res.method === 'native_file_share') {
+        setShareFeedback(
+          isRtl ? 'تم فتح نافذة مشاركة النظام كملف PDF!' : 'Native OS share sheet opened with Statement PDF attached!'
+        );
+      }
+    } catch (err) {
+      console.error('handleSystemSharePdf error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSendTextToWhatsApp = () => {
+    sharePdfToWhatsApp({
+      fileName: pdfFileName,
+      party,
+      transaction: null,
+      profile,
+      lang,
+      recipientPhone,
+      mode: 'text',
+    });
+    setShareFeedback(isRtl ? 'تم فتح محادثة الواتساب مع إرسال ملخص الحساب نصيًا للرقم المحدد!' : 'Opened WhatsApp with account summary for dedicated number!');
   };
 
   const handlePrint = () => {
@@ -455,7 +572,7 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
                           {row.tx.receiptNumber}
                         </td>
                         <td className="py-2 px-2 text-stone-900 text-xs max-w-[200px] truncate">
-                          {row.tx.notes || (row.tx.type === 'SALE_CREDIT' ? t.creditSaleTitle : row.tx.type === 'PAYMENT_RECEIVED' ? t.receiptTitle : t.supplyIntakeTitle)}
+                          {row.tx.notes || getDocumentNaming(row.tx.type, lang, Boolean(row.tx.taxAmount && row.tx.taxAmount > 0)).shortLabel}
                         </td>
                         <td className="py-2 px-2 text-end font-mono text-xs font-bold text-rose-700">
                           {row.debit > 0 ? formatCurrency(row.debit, currency, lang) : '-'}
@@ -494,6 +611,72 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Direct WhatsApp Instant Dispatch Bar with Dedicated Phone Number */}
+        <div className="p-3 bg-emerald-50/90 rounded-2xl border border-emerald-200/90 space-y-2.5 text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-1">
+            <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-emerald-600" />
+              <span>{isRtl ? 'إرسال كشف الحساب عبر الواتساب' : 'Dispatch Statement via WhatsApp'}</span>
+            </span>
+            <span className="text-[10px] text-emerald-700 font-mono">
+              {isRtl ? 'بدون كتابة رمز الدولة (+966 تلقائي)' : 'No country code required'}
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center bg-white rounded-xl border border-emerald-200 px-2 py-2 shrink-0 shadow-2xs font-mono font-bold text-emerald-800 text-xs">
+                🇸🇦 +966
+              </div>
+              <input
+                type="tel"
+                value={recipientPhone}
+                onChange={(e) => setRecipientPhone(e.target.value)}
+                placeholder="05XXXXXXXX"
+                className="flex-1 min-w-0 bg-white text-slate-900 font-mono font-bold text-xs rounded-xl px-3 py-2 border border-emerald-200 focus:outline-none focus:border-emerald-500 shadow-2xs min-h-[40px]"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Primary: Direct PDF File Delivery via WhatsApp to Dedicated Number */}
+              <button
+                type="button"
+                onClick={handleSendPdfToWhatsApp}
+                disabled={isGenerating}
+                className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-75 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all min-h-[40px]"
+                title={isRtl ? 'إرسال ملف PDF كشف الحساب مباشرة للرقم' : 'Send Statement PDF directly to dedicated number'}
+              >
+                <FileText className="w-4 h-4" />
+                <span>{isRtl ? 'إرسال PDF للرقم' : 'Send PDF to Number'}</span>
+              </button>
+
+              {/* Secondary: Quick Text Summary Only */}
+              <button
+                type="button"
+                onClick={handleSendTextToWhatsApp}
+                className="px-2.5 py-2 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all min-h-[40px]"
+                title={isRtl ? 'إرسال ملخص نصي فقط للرقم' : 'Text Summary to Number'}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">{isRtl ? 'نص فقط' : 'Text'}</span>
+              </button>
+
+              {/* Tertiary: OS Native Share Sheet */}
+              <button
+                type="button"
+                onClick={handleSystemSharePdf}
+                disabled={isGenerating}
+                className="px-2.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all min-h-[40px]"
+                title={isRtl ? 'مشاركة كملف عبر التطبيقات (Share Sheet)' : 'Share file via system sheet'}
+              >
+                <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">{isRtl ? 'مشاركة كملف' : 'Share File'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* PDF Ready Direct Access Banner */}
         {pdfUrl && (
           <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
@@ -525,8 +708,8 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
             </button>
 
             <button
-              onClick={handleWhatsAppShare}
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              onClick={handleSendTextToWhatsApp}
+              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors min-h-[40px]"
               title={isRtl ? 'إرسال ملخص الحساب نصيًا عبر واتساب' : 'Send summary via WhatsApp'}
             >
               <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
@@ -535,12 +718,12 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
           </div>
 
           <button
-            onClick={handleSharePdf}
+            onClick={handleSendPdfToWhatsApp}
             disabled={isGenerating}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/20 transition-all border border-emerald-400/30 disabled:opacity-75"
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/20 transition-all border border-emerald-400/30 disabled:opacity-75 min-h-[40px]"
           >
             <Share2 className="w-4 h-4" />
-            <span>{isGenerating ? t.generatingPdf : t.sharePdf}</span>
+            <span>{isGenerating ? t.generatingPdf : (isRtl ? 'إرسال كشف الحساب PDF مباشرة' : 'Share Statement PDF Directly')}</span>
           </button>
         </div>
       </motion.div>

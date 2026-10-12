@@ -14,6 +14,9 @@ import {
   Copy,
   Check,
   Trash2,
+  ShieldCheck,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
@@ -22,6 +25,9 @@ import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage, 
 import type { jsPDF } from 'jspdf';
 import { generateInvoicePdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 import { generateZatcaTlvQrString } from '../utils/zatca';
+import { sharePdfToWhatsApp } from '../utils/whatsappShare';
+import { verifyPdfBlobIntegrity, type PdfIntegrityResult, type IntegrityCheckStatus } from '../utils/pdfIntegrity';
+import { getDocumentNaming } from '../utils/messageEngine';
 
 interface InvoicePdfModalProps {
   transaction: Transaction;
@@ -30,6 +36,7 @@ interface InvoicePdfModalProps {
   lang: Language;
   onClose: () => void;
   onVoidTransaction?: (txId: string) => void;
+  onConvertToInvoice?: (quotationTx: Transaction) => void;
 }
 
 export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
@@ -39,6 +46,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   lang,
   onClose,
   onVoidTransaction,
+  onConvertToInvoice,
 }) => {
   const t = getTranslation(lang);
   const currency = profile.currency || 'SAR';
@@ -48,25 +56,25 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   const [zatcaQrUrl, setZatcaQrUrl] = useState<string>('');
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  // Automated File Integrity Checker & Local Memory Cache State
+  const [integrityStatus, setIntegrityStatus] = useState<IntegrityCheckStatus>('checking');
+  const [integrityResult, setIntegrityResult] = useState<PdfIntegrityResult | null>(null);
+  const [integrityError, setIntegrityError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
+  const [whatsAppNotice, setWhatsAppNotice] = useState<{ text: string; fileName?: string } | null>(null);
   const [recipientPhone, setRecipientPhone] = useState<string>(party.phone || '');
+  const [printFormat, setPrintFormat] = useState<'A4' | 'THERMAL_80MM'>('A4');
 
   const isSale = transaction.type === 'SALE_CREDIT';
   const isSupply = transaction.type === 'SUPPLY_CREDIT';
   const isReceipt = transaction.type === 'PAYMENT_RECEIVED';
   const isPayment = transaction.type === 'PAYMENT_PAID';
+  const isQuotation = transaction.type === 'QUOTATION';
+  const isReturn = transaction.type === 'RETURN_SALE';
 
   const isVatApplied = Boolean(transaction.taxAmount && transaction.taxAmount > 0);
-
-  const docTitle = isSale
-    ? isVatApplied
-      ? (isRtl ? 'فاتورة ضريبية مبسطة' : 'Simplified Tax Invoice')
-      : (isRtl ? 'فاتورة بيع آجل' : 'Credit Sale Invoice')
-    : isSupply
-    ? (isRtl ? 'سند توريد بالآجل' : 'Credit Supply Note')
-    : isReceipt
-    ? (isRtl ? 'سند قبض مالي' : 'Payment Receipt Voucher')
-    : (isRtl ? 'سند صرف نقدي' : 'Payment Voucher');
+  const docNaming = getDocumentNaming(transaction.type, lang, isVatApplied);
+  const docTitle = docNaming.title;
 
   const pdfFileName = `${profile.name.replace(/\s+/g, '_')}_${docTitle.replace(/\s+/g, '_')}_${transaction.receiptNumber}.pdf`;
 
@@ -89,10 +97,54 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   }, [profile, transaction, party, isVatApplied]);
 
-  // Precompute PDF Blob once DOM is mounted
+  // Automated File Integrity Checker: validates presence, structure, header (%PDF-), and local memory cache
+  const runAutomatedIntegrityCheck = async (providedBlob?: Blob): Promise<{ success: boolean; blob: Blob | null; result?: PdfIntegrityResult }> => {
+    setIntegrityStatus('checking');
+    setIntegrityError(null);
+    try {
+      let targetBlob = providedBlob || pdfBlob;
+      if (!targetBlob) {
+        const doc = await generateInvoicePdf({
+          profile,
+          transaction,
+          party,
+          zatcaQrDataUrl: zatcaQrUrl || undefined,
+          isVatApplied,
+          lang,
+        });
+        targetBlob = doc.output('blob');
+      }
+
+      // Automated deep binary inspection & header verification
+      const checkResult = await verifyPdfBlobIntegrity(targetBlob);
+      if (!checkResult.valid || !checkResult.cachedInMemory) {
+        setIntegrityStatus('failed');
+        setIntegrityError(checkResult.error || (isRtl ? 'تعذر التحقق من سلامة ملف الـ PDF' : 'Document integrity check failed'));
+        return { success: false, blob: null, result: checkResult };
+      }
+
+      // Cached in local memory & verified
+      setPdfBlob(targetBlob);
+      setIntegrityResult(checkResult);
+      setIntegrityStatus('verified');
+      if (!pdfUrl) {
+        setPdfUrl(URL.createObjectURL(targetBlob));
+      }
+      return { success: true, blob: targetBlob, result: checkResult };
+    } catch (err: any) {
+      console.error('Automated file integrity check error:', err);
+      setIntegrityStatus('failed');
+      setIntegrityError(err?.message || (isRtl ? 'خطأ أثناء فحص سلامة الملف' : 'Integrity check error'));
+      return { success: false, blob: null };
+    }
+  };
+
+  // Precompute PDF Blob and automatically verify file integrity once mounted
   useEffect(() => {
     let mounted = true;
     let activeUrl: string | null = null;
+    setIntegrityStatus('checking');
+    setIntegrityError(null);
 
     const timer = setTimeout(async () => {
       try {
@@ -106,12 +158,24 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
         });
         if (mounted) {
           const blob = doc.output('blob');
-          setPdfBlob(blob);
-          activeUrl = URL.createObjectURL(blob);
-          setPdfUrl(activeUrl);
+          const check = await verifyPdfBlobIntegrity(blob);
+          if (check.valid && check.cachedInMemory) {
+            setPdfBlob(blob);
+            setIntegrityResult(check);
+            setIntegrityStatus('verified');
+            activeUrl = URL.createObjectURL(blob);
+            setPdfUrl(activeUrl);
+          } else {
+            setIntegrityStatus('failed');
+            setIntegrityError(check.error || 'Failed integrity inspection');
+          }
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn('Precomputing Invoice PDF failed:', e);
+        if (mounted) {
+          setIntegrityStatus('failed');
+          setIntegrityError(e?.message || 'Invoice PDF generation error');
+        }
       }
     }, 120);
 
@@ -124,18 +188,40 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     };
   }, [profile, transaction, party, zatcaQrUrl, isVatApplied, lang]);
 
+  // Automated Gate: verifies existence of cached invoice Blob before allowing any share
+  const ensureVerifiedPdfBlob = async (): Promise<Blob | null> => {
+    if (pdfBlob && integrityStatus === 'verified') {
+      const fastCheck = await verifyPdfBlobIntegrity(pdfBlob);
+      if (fastCheck.valid && fastCheck.cachedInMemory) {
+        return pdfBlob;
+      }
+    }
+    const res = await runAutomatedIntegrityCheck();
+    return res.success ? res.blob : null;
+  };
+
   const handleDownloadPdf = async () => {
     setIsGenerating(true);
     try {
-      const doc = await generateInvoicePdf({
-        profile,
-        transaction,
-        party,
-        zatcaQrDataUrl: zatcaQrUrl || undefined,
-        isVatApplied,
-        lang,
-      });
-      doc.save(pdfFileName);
+      if (pdfBlob && integrityStatus === 'verified') {
+        const url = pdfUrl || URL.createObjectURL(pdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pdfFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const doc = await generateInvoicePdf({
+          profile,
+          transaction,
+          party,
+          zatcaQrDataUrl: zatcaQrUrl || undefined,
+          isVatApplied,
+          lang,
+        });
+        doc.save(pdfFileName);
+      }
     } catch (err) {
       console.error('Invoice PDF download error:', err);
     } finally {
@@ -144,31 +230,30 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   };
 
   const handleSharePdf = async () => {
+    const targetPhone = (recipientPhone || '').trim() || party.phone || '';
+    if (targetPhone) {
+      return handleSendPdfToWhatsApp();
+    }
+
     setIsGenerating(true);
     setShareFeedback(null);
     try {
-      let blob = pdfBlob;
-      let doc: jsPDF | null = null;
-      if (!blob) {
-        doc = await generateInvoicePdf({
-          profile,
-          transaction,
-          party,
-          zatcaQrDataUrl: zatcaQrUrl || undefined,
-          isVatApplied,
-          lang,
-        });
-        blob = doc.output('blob');
+      // 1. Automated Integrity Check Gate: Verify existence of Blob in local memory
+      const verifiedBlob = await ensureVerifiedPdfBlob();
+      if (!verifiedBlob) {
+        setShareFeedback(isRtl ? 'تعذر إرسال المستند: فشل التحقق من سلامة ملف الـ PDF بالذاكرة.' : 'Document share prevented: PDF file integrity check failed in memory.');
+        setIsGenerating(false);
+        return;
       }
 
       // Generation finished, release UI immediately so returning from external share is responsive
       setIsGenerating(false);
 
       const result = await shareOrDownloadPdf(
-        doc,
+        null,
         pdfFileName,
         `${docTitle} - #${transaction.receiptNumber}`,
-        blob
+        verifiedBlob
       );
       if (result.success) {
         setShareFeedback(isRtl ? 'تم تجهيز ومشاركة ملف PDF بنجاح!' : 'PDF ready and shared!');
@@ -182,14 +267,122 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   };
 
-  const handleWhatsAppShare = () => {
-    const phoneToUse = recipientPhone.trim() || party.phone;
-    const cleanPhone = sanitizePhoneNumber(phoneToUse);
-    const msg = buildWhatsAppMessage(party, transaction, profile, lang);
-    const url = cleanPhone
-      ? `https://wa.me/${cleanPhone}?text=${msg}`
-      : `https://wa.me/?text=${msg}`;
-    openExternalUrl(url);
+  const handleSendPdfToWhatsApp = async () => {
+    setIsGenerating(true);
+    setWhatsAppNotice(null);
+    try {
+      // 1. Automated Integrity Check Gate: Verify existence of Blob in local memory
+      const verifiedBlob = await ensureVerifiedPdfBlob();
+      if (!verifiedBlob) {
+        setWhatsAppNotice({
+          text: isRtl
+            ? 'تنبيه: تعذر إرسال المستند لعدم اجتياز فحص سلامة الملف في الذاكرة. يرجى إعادة محاولة الفحص.'
+            : 'Alert: Cannot share document because file integrity check failed in memory. Please retry.',
+        });
+        setIsGenerating(false);
+        return;
+      }
+
+      setIsGenerating(false);
+
+      const res = await sharePdfToWhatsApp({
+        pdfBlob: verifiedBlob,
+        fileName: pdfFileName,
+        party,
+        transaction,
+        profile,
+        lang,
+        recipientPhone,
+        mode: 'file',
+      });
+
+      if (res.method === 'native_file_share') {
+        setWhatsAppNotice({
+          text: isRtl
+            ? 'تم فتح نافذة مشاركة ملف الـ PDF مباشرة! اختر واتساب لإرسال ملف الفاتورة.'
+            : 'Opened native share sheet with PDF file attached! Select WhatsApp to send.',
+          fileName: res.fileName,
+        });
+      } else if (res.cleanPhone) {
+        setWhatsAppNotice({
+          text: isRtl
+            ? `تم تنزيل ملف PDF الفاتورة (${res.fileName}) بجهازك وفتح محادثة العميل (${res.cleanPhone}) في واتساب.`
+            : `Downloaded invoice PDF (${res.fileName}) and opened WhatsApp chat with ${res.cleanPhone}.`,
+          fileName: res.fileName,
+        });
+      } else {
+        setWhatsAppNotice({
+          text: isRtl
+            ? `تم تنزيل ملف PDF الفاتورة (${res.fileName}) بجهازك وفتح واتساب.`
+            : `Downloaded invoice PDF (${res.fileName}) and opened WhatsApp.`,
+          fileName: res.fileName,
+        });
+      }
+    } catch (err: any) {
+      console.error('handleSendPdfToWhatsApp error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSystemSharePdf = async () => {
+    setIsGenerating(true);
+    setWhatsAppNotice(null);
+    try {
+      // 1. Automated Integrity Check Gate: Verify existence of Blob in local memory
+      const verifiedBlob = await ensureVerifiedPdfBlob();
+      if (!verifiedBlob) {
+        setWhatsAppNotice({
+          text: isRtl
+            ? 'تعذر مشاركة المستند: فشل فحص سلامة ملف الـ PDF في الذاكرة.'
+            : 'Cannot share document: PDF file integrity check failed in memory.',
+        });
+        setIsGenerating(false);
+        return;
+      }
+
+      setIsGenerating(false);
+
+      const res = await sharePdfToWhatsApp({
+        pdfBlob: verifiedBlob,
+        fileName: pdfFileName,
+        party,
+        transaction,
+        profile,
+        lang,
+        recipientPhone,
+        mode: 'system_share',
+      });
+
+      if (res.method === 'native_file_share') {
+        setWhatsAppNotice({
+          text: isRtl ? 'تم فتح نافذة مشاركة النظام كملف PDF!' : 'Native OS share sheet opened with PDF file attached!',
+          fileName: res.fileName,
+        });
+      }
+    } catch (err: any) {
+      console.error('handleSystemSharePdf error:', err);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleSendTextToWhatsApp = () => {
+    setWhatsAppNotice(null);
+    sharePdfToWhatsApp({
+      fileName: pdfFileName,
+      party,
+      transaction,
+      profile,
+      lang,
+      recipientPhone,
+      mode: 'text',
+    });
+    setWhatsAppNotice({
+      text: isRtl
+        ? 'تم فتح محادثة الواتساب مع إرسال الملخص النصي!'
+        : 'Opened WhatsApp with invoice text summary!',
+    });
   };
 
   const handlePrint = () => {
@@ -255,6 +448,30 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
               </button>
             )}
 
+
+            {/* Convert Quotation to Invoice Button */}
+            {isQuotation && !transaction.isQuotationConverted && onConvertToInvoice && (
+              <button
+                type="button"
+                onClick={() => {
+                  onConvertToInvoice(transaction);
+                  onClose();
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-all shadow-2xs flex items-center gap-1"
+              >
+                <span>{t.convertToInvoice}</span>
+              </button>
+            )}
+
+            {/* Print Format Toggle: Standard A4 vs 80mm Thermal */}
+            <button
+              type="button"
+              onClick={() => setPrintFormat(printFormat === 'A4' ? 'THERMAL_80MM' : 'A4')}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-300/60 shadow-2xs transition-colors flex items-center gap-1"
+              title={isRtl ? 'تبديل التنسيق: A4 أو طابعة إيصالات 80 مم' : 'Toggle A4 or 80mm Thermal layout'}
+            >
+              <span>{printFormat === 'A4' ? '📄 A4' : '🧾 80mm'}</span>
+            </button>
 
             {/* Share PDF File (iOS Share Sheet / Native Web Share) */}
             <button
@@ -351,7 +568,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                   </div>
                 )}
                 <div className="text-end space-y-0.5">
-                  <span className="inline-block px-2.5 py-1 rounded-md bg-cyan-50 text-cyan-800 font-bold text-xs border border-cyan-200">
+                  <span className={`inline-block px-2.5 py-1 rounded-md ${docNaming.badgeBg} ${docNaming.badgeText} font-bold text-xs border ${docNaming.badgeBorder}`}>
                     {docTitle}
                   </span>
                   <div className="font-mono font-black text-sm text-stone-900 mt-1">
@@ -368,7 +585,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
             <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-200 grid grid-cols-2 gap-3">
               <div>
                 <span className="text-xs uppercase font-bold text-stone-500 block">
-                  {party.type === 'CUSTOMER' ? t.billTo : t.supplierFrom}
+                  {docNaming.recipientLabel}
                 </span>
                 <div className="text-xs font-black text-stone-900 mt-0.5">
                   {party.name}
@@ -466,45 +683,68 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                 </span>
               </div>
 
-              {(isSale || isSupply) && (
-                <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-300">
-                  <span className="font-bold text-rose-700">{t.remainingDebtDelta}:</span>
-                  <span className="font-black font-mono text-rose-700">
-                    +{formatCurrency(transaction.totalAmount - transaction.paidAmount, currency, lang)}
-                  </span>
+              {isQuotation ? (
+                <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-semibold">
+                  <span>{isRtl ? 'عرض سعر تقديري - لا يترتب عليه أي التزام مالي حالي حتى اعتماده' : 'Draft estimate - No current financial obligation until approved'}</span>
                 </div>
+              ) : isReturn ? (
+                <>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-300">
+                    <span className="font-bold text-rose-700">{isRtl ? 'المخصوم من رصيد العميل:' : 'Deducted from Debt:'}</span>
+                    <span className="font-black font-mono text-rose-700">
+                      -{formatCurrency(transaction.totalAmount - transaction.paidAmount, currency, lang)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-300 bg-white p-2 rounded-lg border">
+                    <span className="font-bold text-stone-800">{isRtl ? 'الرصيد المتبقي بعد الإشعار:' : 'Balance After Note:'}</span>
+                    <span className="font-black font-mono text-stone-900">
+                      {formatCurrency(party.currentBalance, currency, lang)}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {(isSale || isSupply) && (
+                    <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-300">
+                      <span className="font-bold text-rose-700">{t.remainingDebtDelta}:</span>
+                      <span className="font-black font-mono text-rose-700">
+                        +{formatCurrency(transaction.totalAmount - transaction.paidAmount, currency, lang)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Net Balance Carried Forward */}
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-300 bg-white p-2 rounded-lg border">
+                    <span className="font-bold text-stone-800">{isRtl ? 'الرصيد التراكمي للحساب:' : 'Carried Balance:'}</span>
+                    <span className="font-black font-mono text-stone-900">
+                      {formatCurrency(party.currentBalance, currency, lang)}
+                    </span>
+                  </div>
+
+                  {/* Visual Debt / Payment Status Badge for Low-literacy Users */}
+                  <div className="pt-1">
+                    {transaction.totalAmount <= transaction.paidAmount ? (
+                      <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-emerald-800">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <CheckCircle className="w-4 h-4 text-emerald-600" />
+                          <span>{isRtl ? 'مسدد بالكامل (خالص)' : 'Fully Paid (Settled)'}</span>
+                        </span>
+                        <span className="text-xs font-mono font-bold">{formatCurrency(0, currency, lang)}</span>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between text-rose-800">
+                        <span className="text-xs font-black flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                          <span>{isRtl ? 'متبقي آجل على الحساب:' : 'Remaining on Credit:'}</span>
+                        </span>
+                        <span className="text-xs font-mono font-black text-rose-700">
+                          {formatCurrency(transaction.totalAmount - transaction.paidAmount, currency, lang)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
-
-              {/* Net Balance Carried Forward */}
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-300 bg-white p-2 rounded-lg border">
-                <span className="font-bold text-stone-800">{isRtl ? 'الرصيد التراكمي للحساب:' : 'Carried Balance:'}</span>
-                <span className="font-black font-mono text-stone-900">
-                  {formatCurrency(party.currentBalance, currency, lang)}
-                </span>
-              </div>
-
-              {/* Visual Debt / Payment Status Badge for Low-literacy Users */}
-              <div className="pt-1">
-                {transaction.totalAmount <= transaction.paidAmount ? (
-                  <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between text-emerald-800">
-                    <span className="text-xs font-black flex items-center gap-1.5">
-                      <CheckCircle className="w-4 h-4 text-emerald-600" />
-                      <span>{isRtl ? 'مسدد بالكامل (خالص)' : 'Fully Paid (Settled)'}</span>
-                    </span>
-                    <span className="text-xs font-mono font-bold">{formatCurrency(0, currency, lang)}</span>
-                  </div>
-                ) : (
-                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-between text-rose-800">
-                    <span className="text-xs font-black flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
-                      <span>{isRtl ? 'متبقي آجل على الحساب:' : 'Remaining on Credit:'}</span>
-                    </span>
-                    <span className="text-xs font-mono font-black text-rose-700">
-                      {formatCurrency(transaction.totalAmount - transaction.paidAmount, currency, lang)}
-                    </span>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Notes */}
@@ -541,64 +781,201 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
             </div>
           </div>
         </div>
-        {/* PDF Ready Direct Access Banner */}
-        {pdfUrl && (
-          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-between gap-2 text-xs">
-            <span className="font-bold text-emerald-800 flex items-center gap-1.5 truncate">
-              <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="truncate">{shareFeedback || (isRtl ? 'ملف PDF جاهز للمشاركة والحفظ' : 'PDF ready for sharing & saving')}</span>
-            </span>
-            <a
-              href={pdfUrl}
-              download={pdfFileName}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-xs active:scale-95 transition-all"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'فتح / حفظ PDF' : 'Open / Save PDF'}</span>
-            </a>
-          </div>
-        )}
+        {/* Automated File Integrity Checker & Local Memory Cache UI Indicator */}
+        <div className="rounded-2xl transition-all duration-200">
+          {integrityStatus === 'verified' && (
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50/70 to-emerald-50 border border-emerald-300 shadow-2xs space-y-1.5 text-xs">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-emerald-950">
+                        {isRtl ? 'المستند جاهز للمشاركة' : 'Document Ready to Share'}
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100/90 text-emerald-800 text-[10px] font-bold border border-emerald-300/80">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                        </span>
+                        <span>{isRtl ? 'محفوظ في الذاكرة' : 'Cached in Local Memory'}</span>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-emerald-700 pt-0.5">
+                      <span className="font-semibold">{integrityResult?.formattedSize || '42 KB'}</span>
+                      <span>•</span>
+                      <span className="font-mono text-[10px]">{integrityResult?.header || '%PDF-1.4'}</span>
+                      <span>•</span>
+                      <span>{isRtl ? 'سليم ومفحوص 100%' : 'Integrity Verified (100%)'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => runAutomatedIntegrityCheck()}
+                    title={isRtl ? 'إعادة فحص سلامة الملف' : 'Recheck document integrity'}
+                    className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-emerald-800 border border-emerald-200 shadow-2xs transition-all active:scale-95 text-xs flex items-center gap-1 font-semibold"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="hidden sm:inline">{isRtl ? 'إعادة الفحص' : 'Recheck'}</span>
+                  </button>
+
+                  {pdfUrl && (
+                    <a
+                      href={pdfUrl}
+                      download={pdfFileName}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{isRtl ? 'فتح / حفظ PDF' : 'Open / Save PDF'}</span>
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {integrityStatus === 'checking' && (
+            <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200/90 shadow-2xs flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <RefreshCw className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
+                <div>
+                  <p className="font-bold text-amber-950">
+                    {isRtl ? 'جاري فحص وتأكيد سلامة المستند...' : 'Checking Document Integrity...'}
+                  </p>
+                  <p className="text-[11px] text-amber-700">
+                    {isRtl ? 'جاري فحص سلامة الـ Blob وتخزينه في الذاكرة المحلية قبل المشاركة' : 'Verifying invoice Blob existence and caching in memory prior to share'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {integrityStatus === 'failed' && (
+            <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 shadow-2xs flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <div>
+                  <p className="font-bold text-rose-950">
+                    {isRtl ? 'تعذر التحقق من سلامة المستند' : 'Document Integrity Check Failed'}
+                  </p>
+                  <p className="text-[11px] text-rose-700">
+                    {integrityError || (isRtl ? 'حدث خطأ أثناء فحص ملف الـ PDF' : 'An error occurred while validating the PDF Blob')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => runAutomatedIntegrityCheck()}
+                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shrink-0 flex items-center gap-1 shadow-2xs active:scale-95 transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'إعادة المحاولة' : 'Retry'}</span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Direct WhatsApp Instant Dispatch Bar */}
-        <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200/80 space-y-2 text-xs">
-          <div className="flex items-center justify-between">
+        <div className="p-3.5 bg-emerald-50/90 rounded-2xl border border-emerald-200/90 space-y-2.5 text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-1">
             <span className="font-bold text-emerald-950 flex items-center gap-1.5">
               <MessageSquare className="w-4 h-4 text-emerald-600" />
-              <span>{isRtl ? 'إرسال الفاتورة مباشرة للعميل عبر الواتساب' : 'Direct WhatsApp invoice dispatch'}</span>
+              <span>{isRtl ? `إرسال ${docNaming.shortLabel} عبر الواتساب` : `Dispatch ${docNaming.shortLabel} via WhatsApp`}</span>
             </span>
             <span className="text-[10px] text-emerald-700 font-mono">
-              {isRtl ? 'بدون كتابة رمز الدولة (+966)' : 'No country code required'}
+              {isRtl ? 'بدون كتابة رمز الدولة (+966 تلقائي)' : 'No country code required'}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="flex items-center bg-white rounded-xl border border-emerald-200 px-2 py-1.5 shrink-0 shadow-2xs font-mono font-bold text-emerald-800 text-xs">
-              🇸🇦 +966
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              <div className="flex items-center bg-white rounded-xl border border-emerald-200 px-2 py-2 shrink-0 shadow-2xs font-mono font-bold text-emerald-800 text-xs">
+                🇸🇦 +966
+              </div>
+              <input
+                type="tel"
+                value={recipientPhone}
+                onChange={(e) => setRecipientPhone(e.target.value)}
+                placeholder="05XXXXXXXX"
+                className="flex-1 min-w-0 bg-white text-slate-900 font-mono font-bold text-xs rounded-xl px-3 py-2 border border-emerald-200 focus:outline-none focus:border-emerald-500 shadow-2xs min-h-[40px]"
+              />
             </div>
-            <input
-              type="tel"
-              value={recipientPhone}
-              onChange={(e) => setRecipientPhone(e.target.value)}
-              placeholder="05XXXXXXXX"
-              className="flex-1 bg-white text-slate-900 font-mono font-bold text-xs rounded-xl px-3 py-2 border border-emerald-200 focus:outline-none focus:border-emerald-500 shadow-2xs min-h-[38px]"
-            />
-            <button
-              type="button"
-              onClick={handleWhatsAppShare}
-              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shrink-0 flex items-center gap-1.5 shadow-2xs active:scale-95 transition-all"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'إرسال الآن' : 'Send Now'}</span>
-            </button>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Primary: Direct PDF File Delivery via WhatsApp to the Dedicated Number */}
+              <button
+                type="button"
+                onClick={handleSendPdfToWhatsApp}
+                disabled={isGenerating || integrityStatus === 'checking'}
+                className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-75 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs active:scale-95 transition-all min-h-[40px]"
+                title={isRtl ? 'إرسال ملف PDF مباشرة لرقم الواتساب المحدد' : 'Send PDF directly to dedicated WhatsApp number'}
+              >
+                {integrityStatus === 'checking' ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileText className="w-4 h-4" />
+                )}
+                <span>
+                  {integrityStatus === 'checking'
+                    ? (isRtl ? 'جاري الفحص...' : 'Checking...')
+                    : (isRtl ? 'إرسال PDF للرقم' : 'Send PDF to Number')}
+                </span>
+              </button>
+
+              {/* Secondary: Quick Text Summary Only */}
+              <button
+                type="button"
+                onClick={handleSendTextToWhatsApp}
+                className="px-2.5 py-2 rounded-xl bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-xs flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all min-h-[40px]"
+                title={isRtl ? 'إرسال ملخص نصي فقط للرقم' : 'Text Summary to Number'}
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="hidden sm:inline">{isRtl ? 'نص فقط' : 'Text'}</span>
+              </button>
+
+              {/* Tertiary: OS Native Share Sheet (for apps/AirDrop) */}
+              <button
+                type="button"
+                onClick={handleSystemSharePdf}
+                disabled={isGenerating || integrityStatus === 'checking'}
+                className="px-2.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 font-semibold text-xs flex items-center justify-center gap-1 shadow-2xs active:scale-95 transition-all min-h-[40px]"
+                title={isRtl ? 'مشاركة كملف عبر التطبيقات (Share Sheet)' : 'Share file via system sheet'}
+              >
+                <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                <span className="hidden sm:inline">{isRtl ? 'مشاركة كملف' : 'Share File'}</span>
+              </button>
+            </div>
           </div>
+
+          {/* WhatsApp Action Notice / Feedback Guidance */}
+          {whatsAppNotice && (
+            <div className="p-2.5 bg-white/95 rounded-xl border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-start gap-2 shadow-2xs animate-in fade-in duration-150">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p>{whatsAppNotice.text}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsAppNotice(null)}
+                className="text-slate-400 hover:text-slate-600 p-0.5 shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Bottom Fast Action Bar */}
         <div className="border-t border-slate-200 pt-3 flex items-center justify-between gap-2 text-xs shrink-0 flex-wrap">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={handleCopyText}
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors min-h-[40px]"
               title={isRtl ? 'نسخ نص السند للحافظة' : 'Copy text to clipboard'}
             >
               {copied ? <Check className="w-3.5 h-3.5 text-green-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -606,8 +983,8 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
             </button>
 
             <button
-              onClick={handleWhatsAppShare}
-              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors"
+              onClick={handleSendTextToWhatsApp}
+              className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors min-h-[40px]"
               title={isRtl ? 'إرسال ملخص نصي عبر واتساب' : 'Send quick text via WhatsApp'}
             >
               <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
@@ -616,12 +993,22 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
           </div>
 
           <button
-            onClick={handleSharePdf}
-            disabled={isGenerating}
-            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/20 transition-all border border-emerald-400/30 disabled:opacity-75"
+            onClick={handleSendPdfToWhatsApp}
+            disabled={isGenerating || integrityStatus === 'checking'}
+            className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 active:scale-98 text-white font-black text-xs shadow-md shadow-emerald-950/20 transition-all border border-emerald-400/30 disabled:opacity-75 min-h-[40px]"
           >
-            <Share2 className="w-4 h-4" />
-            <span>{isGenerating ? t.generatingPdf : t.sharePdf}</span>
+            {integrityStatus === 'checking' ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Share2 className="w-4 h-4" />
+            )}
+            <span>
+              {integrityStatus === 'checking'
+                ? (isRtl ? 'جاري فحص وتجهيز الملف...' : 'Checking File Integrity...')
+                : isGenerating
+                ? t.generatingPdf
+                : (isRtl ? 'مشاركة ملف PDF مباشرة' : 'Share PDF Directly')}
+            </span>
           </button>
         </div>
       </motion.div>

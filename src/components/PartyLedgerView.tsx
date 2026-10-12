@@ -24,6 +24,7 @@ import {
 import { BusinessProfile, Language, Party, Transaction, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, formatDate, formatShortDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
+import { getDocumentNaming } from '../utils/messageEngine';
 import { getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PartyLedgerViewProps {
@@ -566,7 +567,7 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
 
                       {/* Line items summary or notes */}
                       <div className={`text-xs font-medium mt-1 truncate ${isVoid ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                        {tx.notes || (isSale ? t.creditSaleTitle : isReceipt ? t.receiptTitle : t.supplyIntakeTitle)}
+                        {tx.notes || getDocumentNaming(tx.type, lang, Boolean(tx.taxAmount && tx.taxAmount > 0)).shortLabel}
                       </div>
 
                       {tx.items && tx.items.length > 0 && (

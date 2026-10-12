@@ -17,7 +17,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
   onToggleLang,
   onOpenPhonePairing,
 }) => {
-  const [isMobileChassis, setIsMobileChassis] = useState(true);
+  const [isMobileChassis, setIsMobileChassis] = useState(false);
 
   return (
     <div
@@ -31,7 +31,9 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
       {/* Top Device & Language Floating Control Strip */}
       <header
         id="top-control-bar"
-        className="no-print w-full max-w-lg mb-4 px-5 py-2.5 hidden md:flex items-center justify-between text-xs text-slate-600 bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200 shadow-sm"
+        className={`no-print w-full mb-4 px-5 py-2.5 hidden md:flex items-center justify-between text-xs text-slate-600 bg-white/80 backdrop-blur-md rounded-2xl border border-slate-200 shadow-sm transition-all duration-300 ${
+          isMobileChassis ? 'max-w-[440px]' : 'max-w-5xl lg:max-w-6xl'
+        }`}
       >
         <div className="flex items-center gap-2.5">
           <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
@@ -39,7 +41,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
             {lang === 'ar' ? 'الدفتر الذكي' : 'Daftar Smart'}
           </span>
           <span className="px-1.5 py-0.5 text-[10px] font-bold rounded-md bg-cyan-50 text-cyan-700 border border-cyan-200">
-            BETA v1.0
+            PRO v2.0
           </span>
         </div>
 
@@ -68,16 +70,17 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
             id="btn-toggle-chassis"
             onClick={() => setIsMobileChassis(!isMobileChassis)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 transition-colors border border-slate-200"
+            title={lang === 'ar' ? 'التبديل بين إطار الهاتف والعرض الكامل' : 'Toggle between phone frame and full responsive view'}
           >
             {isMobileChassis ? (
               <>
                 <Monitor className="w-3.5 h-3.5" />
-                <span>{lang === 'ar' ? 'ملء الشاشة' : 'Full Screen'}</span>
+                <span>{lang === 'ar' ? 'العرض الواسع (سطح المكتب)' : 'Wide View (Desktop)'}</span>
               </>
             ) : (
               <>
                 <Smartphone className="w-3.5 h-3.5" />
-                <span>{lang === 'ar' ? 'إطار الهاتف' : 'Phone Frame'}</span>
+                <span>{lang === 'ar' ? 'معاينة إطار الهاتف' : 'Phone Simulator'}</span>
               </>
             )}
           </button>
@@ -90,7 +93,7 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({
         className={`w-full transition-all duration-300 relative flex flex-col bg-[#F8FAFC] shadow-2xl print:max-w-none print:h-auto print:min-h-0 print:border-none print:shadow-none print:rounded-none print:bg-white print:m-0 print:p-0 ${
           isMobileChassis
             ? 'h-[100dvh] md:h-[92vh] md:min-h-[860px] max-w-full md:max-w-[440px] md:rounded-[48px] md:border-[12px] md:border-black md:ring-1 md:ring-slate-300 overflow-hidden shadow-slate-300/50'
-            : 'h-[100dvh] md:min-h-screen md:h-auto max-w-full md:max-w-3xl md:rounded-3xl md:border md:border-slate-200 overflow-hidden shadow-slate-200/50'
+            : 'h-[100dvh] md:min-h-[880px] md:h-auto max-w-full md:max-w-5xl lg:max-w-6xl md:rounded-3xl md:border md:border-slate-200 overflow-hidden shadow-slate-200/50'
         }`}
       >
         {/* Scrollable Mobile View Content Area */}
