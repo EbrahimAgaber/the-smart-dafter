@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, formatDate, formatShortDate, sanitizePhoneNumber, buildWhatsAppMessage } from '../utils/formatters';
+import { formatCurrency, formatDate, formatShortDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import { getAvatarColorClass } from '../utils/speechFeedback';
 
 interface PartyLedgerViewProps {
@@ -192,7 +192,7 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
     const url = cleanPhone
       ? `https://wa.me/${cleanPhone}?text=${msg}`
       : `https://wa.me/?text=${msg}`;
-    window.open(url, '_blank');
+    openExternalUrl(url);
   };
 
   return (

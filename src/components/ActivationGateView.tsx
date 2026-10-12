@@ -22,6 +22,7 @@ import {
   LicenseStatus,
 } from '../utils/licenseManager';
 import { playSuccessChime } from '../utils/speechFeedback';
+import { openExternalUrl } from '../utils/formatters';
 
 interface ActivationGateViewProps {
   lang: Language;
@@ -134,7 +135,7 @@ export const ActivationGateView: React.FC<ActivationGateViewProps> = ({
 
   const handleContactWhatsApp = () => {
     const message = encodeURIComponent(getContactMessage());
-    window.open(`https://wa.me/?text=${message}`, '_blank');
+    openExternalUrl(`https://wa.me/?text=${message}`);
   };
 
   const handleCopyContactMessage = async () => {

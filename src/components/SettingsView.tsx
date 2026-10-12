@@ -29,6 +29,7 @@ import { BusinessProfile, Language } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { compressImageFile } from '../utils/imageCompressor';
 import { getLicenseStatus } from '../utils/licenseManager';
+import { openExternalUrl } from '../utils/formatters';
 
 interface SettingsViewProps {
   profile: BusinessProfile;
@@ -146,7 +147,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ? 'تطبيق الدفتر الذكي لإدارة الفواتير والديون ونقاط البيع السريعة: '
       : 'Daftar Smart app for POS, credit ledger, invoices, and thermal receipts: ';
     const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText + '\n' + url)}`;
-    window.open(waUrl, '_blank');
+    openExternalUrl(waUrl);
   };
 
   const handleSaveProfile = (e: React.FormEvent) => {

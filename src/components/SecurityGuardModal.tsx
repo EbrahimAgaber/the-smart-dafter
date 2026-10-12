@@ -19,6 +19,7 @@ import {
   LicenseStatus,
 } from '../utils/licenseManager';
 import { playSuccessChime } from '../utils/speechFeedback';
+import { openExternalUrl } from '../utils/formatters';
 
 interface SecurityGuardModalProps {
   profile: BusinessProfile;
@@ -69,7 +70,7 @@ export const SecurityGuardModal: React.FC<SecurityGuardModalProps> = ({
         ? `السلام عليكم، أود تجديد أو شراء ترخيص لتطبيق الدفتر الذكي.\nاسم المتجر: ${profile.name || 'بدون اسم'}\nرقم الجوال: ${profile.phone || 'غير محدد'}`
         : `Hello, I would like to renew or purchase a license for Daftar Smart.\nStore: ${profile.name || 'N/A'}`
     );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+    openExternalUrl(`https://wa.me/?text=${text}`);
   };
 
   return (

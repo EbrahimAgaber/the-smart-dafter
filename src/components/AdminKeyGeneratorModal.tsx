@@ -23,6 +23,7 @@ import {
   activateLicenseKey,
   LicenseStatus,
 } from '../utils/licenseManager';
+import { openExternalUrl } from '../utils/formatters';
 import { playSuccessChime } from '../utils/speechFeedback';
 
 interface AdminKeyGeneratorModalProps {
@@ -90,7 +91,7 @@ export const AdminKeyGeneratorModal: React.FC<AdminKeyGeneratorModalProps> = ({
         ? `مرحبًا بك! مفتاح تفعيل برنامج "الدفتر الذكي" الخاص بك:\n\n🔐 المفتاح: ${generatedKey}\n⏱️ مدة الترخيص: ${generatedPlanName}\n📅 صالح حتى: ${generatedExpiry}\n\nطريقة التفعيل: افتح التطبيق -> أدخل المفتاح في شاشة التفعيل واضغط "تفعيل الآن".`
         : `Welcome! Here is your Daftar Smart activation key:\n\nKey: ${generatedKey}\nPlan: ${generatedPlanName}\nValid until: ${generatedExpiry}\n\nActivation: Open app -> Enter key and tap Activate Now.`
     );
-    window.open(`https://wa.me/?text=${msg}`, '_blank');
+    openExternalUrl(`https://wa.me/?text=${msg}`);
   };
 
   const handleDirectActivate = () => {
