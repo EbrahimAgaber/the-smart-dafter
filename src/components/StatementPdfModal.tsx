@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
+import { formatCurrency, formatDate, sanitizePhoneNumber, formatLocalPhoneInput, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import type { jsPDF } from 'jspdf';
 import { generateStatementPdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 import { sharePdfToWhatsApp } from '../utils/whatsappShare';
@@ -45,7 +45,7 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
-  const [recipientPhone, setRecipientPhone] = useState<string>(party.phone || '');
+  const [recipientPhone, setRecipientPhone] = useState<string>(() => formatLocalPhoneInput(party.phone || ''));
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
@@ -141,15 +141,25 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
   const handleDownloadPdf = async () => {
     setIsGenerating(true);
     try {
-      const doc = await generateStatementPdf({
-        profile,
-        party,
-        transactions: filteredTransactions,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        lang,
-      });
-      doc.save(pdfFileName);
+      if (pdfBlob) {
+        const url = pdfUrl || URL.createObjectURL(pdfBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = pdfFileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        const doc = await generateStatementPdf({
+          profile,
+          party,
+          transactions: filteredTransactions,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          lang,
+        });
+        doc.save(pdfFileName);
+      }
     } catch (err) {
       console.error('Statement download error:', err);
     } finally {

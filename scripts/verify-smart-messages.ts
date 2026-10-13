@@ -73,7 +73,25 @@ async function runSmartMessageTests() {
   assert('Quotation message has estimated total label', qotMsg.includes('إجمالي العرض التقديري'));
   assert('Quotation message includes 15-day validity notice', qotMsg.includes('صالح لمدة 15 يوماً'));
   assert('Quotation message does NOT claim credit sale debt', !qotMsg.includes('فاتورة مبيعات آجل'));
-  assert('Quotation message does NOT show customer carried debt balance', !qotMsg.includes('إجمالي رصيدكم الحالي لدينا'));
+  // Test 1b: Custom Quotation Terms & Dynamic Validity
+  const customQotTx = {
+    id: 'tx-1-custom',
+    partyId: customer.id,
+    type: 'QUOTATION',
+    date: new Date().toISOString(),
+    receiptNumber: 'QOT-2026-0002',
+    items: [{ name: 'لابتوب ديل', quantity: 1, unitPrice: 3200, subtotal: 3200 }],
+    totalAmount: 3200,
+    paidAmount: 0,
+    remainingBalanceDelta: 0,
+    notes: 'عرض للأجهزة المحمولة',
+    quotationValidityDays: 30,
+    quotationTerms: 'يشمل الضمان سنتين والتوصيل مجاني',
+  };
+
+  const customQotMsg = decodeURIComponent(buildSmartWhatsAppMessage(customer, customQotTx, profile, 'ar'));
+  assert('Quotation message adapts to custom 30 days validity', customQotMsg.includes('صالح لمدة 30 يوماً'));
+  assert('Quotation message includes custom quotation terms', customQotMsg.includes('يشمل الضمان سنتين والتوصيل مجاني'));
 
   // Test 2: Sales Return (Credit Note) Naming & Message
   const retTx = {

@@ -148,6 +148,7 @@ export class SQLiteLedgerStore {
   private dailyClosings: DailyClosingSession[] = [];
   private profile: BusinessProfile = defaultBusinessProfile;
   private subscribers: (() => void)[] = [];
+  private onDataChangeCallback?: () => void;
 
   // Storage Health Audit Metrics
   private consecutiveFailures = 0;
@@ -170,6 +171,10 @@ export class SQLiteLedgerStore {
       SQLiteLedgerStore.instance = new SQLiteLedgerStore();
     }
     return SQLiteLedgerStore.instance;
+  }
+
+  public setOnDataChangeCallback(callback: () => void): void {
+    this.onDataChangeCallback = callback;
   }
 
   public subscribe(callback: () => void): () => void {
@@ -345,6 +350,14 @@ export class SQLiteLedgerStore {
     if (lsSuccess) {
       this.consecutiveFailures = 0;
       this.lastSuccessfulSave = new Date().toISOString();
+    }
+
+    if (this.onDataChangeCallback) {
+      try {
+        this.onDataChangeCallback();
+      } catch (err) {
+        console.warn('Error in ledger store data change hook:', err);
+      }
     }
   }
 
@@ -668,6 +681,12 @@ export class SQLiteLedgerStore {
       notes: txData.notes || '',
       receiptNumber: txData.customReceiptNumber || generatedReceipt,
       paymentMethod: txData.paymentMethod || 'CASH',
+      quotationValidityDays: txData.quotationValidityDays,
+      quotationTerms: txData.quotationTerms,
+      isQuotationConverted: txData.isQuotationConverted,
+      convertedTransactionId: txData.convertedTransactionId,
+      dueDate: txData.dueDate,
+      supplierInvoiceAttachment: txData.supplierInvoiceAttachment,
     };
 
     this.transactions.push(newTx);
@@ -714,6 +733,137 @@ export class SQLiteLedgerStore {
     }
     this.saveToStorage();
     return true;
+  }
+
+  /**
+   * Validates whether an invoice or document can be modified:
+   * Modifications are strictly allowed for 5 days after issuance and if not voided.
+   */
+  public canModifyInvoice(tx: Transaction): {
+    allowed: boolean;
+    reason?: string;
+    remainingDays?: number;
+    remainingHours?: number;
+  } {
+    if (!tx) return { allowed: false, reason: 'الفاتورة غير موجودة' };
+    if (tx.isVoided) {
+      return { allowed: false, reason: 'لا يمكن تعديل فاتورة ملغاة ومبطلة' };
+    }
+    const txTime = new Date(tx.date).getTime();
+    if (isNaN(txTime)) {
+      return { allowed: false, reason: 'تاريخ الفاتورة غير صالح' };
+    }
+    const now = Date.now();
+    const elapsedMs = now - txTime;
+    const maxMs = 5 * 24 * 60 * 60 * 1000; // 5 calendar days (120 hours)
+    if (elapsedMs > maxMs) {
+      return {
+        allowed: false,
+        reason: 'انتهت مهلة التعديل (مسموح بتعديل الفاتورة خلال 5 أيام فقط من تاريخ إصدارها)',
+        remainingDays: 0,
+        remainingHours: 0,
+      };
+    }
+    const remainingMs = Math.max(0, maxMs - elapsedMs);
+    const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+    const remainingDays = Math.ceil(remainingHours / 24);
+    return {
+      allowed: true,
+      remainingDays,
+      remainingHours,
+    };
+  }
+
+  /**
+   * Modifies an existing invoice within the 5-day grace period,
+   * updates line items and totals, and recalculates the party balance.
+   */
+  public updateTransaction(
+    id: string,
+    updatedData: Partial<Transaction>
+  ): Transaction {
+    const idx = this.transactions.findIndex((t) => t.id === id);
+    if (idx === -1) {
+      throw new Error('Transaction not found');
+    }
+    const existing = this.transactions[idx];
+    const check = this.canModifyInvoice(existing);
+    if (!check.allowed) {
+      throw new Error(check.reason || 'Cannot modify this invoice (5-day window expired or voided)');
+    }
+
+    const updatedTx: Transaction = {
+      ...existing,
+      ...updatedData,
+      id: existing.id,
+      receiptNumber: existing.receiptNumber, // Retain official invoice sequence number
+      partyId: updatedData.partyId || existing.partyId,
+      type: updatedData.type || existing.type,
+      date: existing.date, // Retain original issue timestamp
+      updatedAt: new Date().toISOString(),
+      isModified: true,
+    };
+
+    this.transactions[idx] = updatedTx;
+
+    // Recalculate party balance
+    const party = this.parties.find((p) => p.id === updatedTx.partyId);
+    if (party) {
+      party.currentBalance = calculatePartyBalance(party, this.getTransactionsByParty(party.id));
+    }
+    // If party was changed, recalculate previous party balance too
+    if (updatedData.partyId && updatedData.partyId !== existing.partyId) {
+      const oldParty = this.parties.find((p) => p.id === existing.partyId);
+      if (oldParty) {
+        oldParty.currentBalance = calculatePartyBalance(oldParty, this.getTransactionsByParty(oldParty.id));
+      }
+    }
+
+    this.saveToStorage();
+    return updatedTx;
+  }
+
+  public convertQuotationToInvoice(quotationId: string): Transaction {
+    const qIdx = this.transactions.findIndex((t) => t.id === quotationId);
+    if (qIdx === -1) {
+      throw new Error('Quotation not found');
+    }
+    const quotation = this.transactions[qIdx];
+    if (quotation.type !== 'QUOTATION') {
+      throw new Error('Transaction is not a quotation');
+    }
+    if (quotation.isQuotationConverted) {
+      throw new Error('Quotation has already been converted to an invoice');
+    }
+
+    // Create the new SALE_CREDIT transaction
+    const newInvoice = this.addTransaction({
+      partyId: quotation.partyId,
+      type: 'SALE_CREDIT',
+      date: new Date().toISOString(),
+      items: quotation.items || [],
+      subtotalBeforeTax: quotation.subtotalBeforeTax,
+      discountAmount: quotation.discountAmount,
+      taxRate: quotation.taxRate,
+      taxAmount: quotation.taxAmount,
+      totalAmount: quotation.totalAmount,
+      paidAmount: 0, // Unpaid credit invoice by default
+      remainingBalanceDelta: quotation.totalAmount,
+      notes: quotation.notes
+        ? `${quotation.notes} (محولة من عرض سعر #${quotation.receiptNumber})`
+        : `محولة من عرض سعر #${quotation.receiptNumber}`,
+      paymentMethod: quotation.paymentMethod || 'CASH',
+    });
+
+    // Mark quotation as converted
+    this.transactions[qIdx] = {
+      ...quotation,
+      isQuotationConverted: true,
+      convertedTransactionId: newInvoice.id,
+    };
+    this.saveToStorage();
+
+    return newInvoice;
   }
 
   public deleteTransaction(id: string): boolean {

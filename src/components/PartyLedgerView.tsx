@@ -20,6 +20,7 @@ import {
   Trash2,
   RotateCcw,
   X,
+  Edit2,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -38,6 +39,7 @@ interface PartyLedgerViewProps {
   onOpenStatementPdf: () => void;
   onSelectTransaction: (tx: Transaction) => void;
   onVoidTransaction?: (txId: string) => void;
+  onEditTransaction?: (tx: Transaction) => void;
 }
 
 export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
@@ -51,6 +53,7 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
   onOpenStatementPdf,
   onSelectTransaction,
   onVoidTransaction,
+  onEditTransaction,
 }) => {
   const t = getTranslation(lang);
   const currency = profile.currency || 'SAR';
@@ -591,6 +594,38 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
                             -{formatCurrency(entry.credit, currency, lang)}
                           </div>
                         )}
+
+                        {/* Edit invoice button (within 5-day grace period) */}
+                        {!isVoid && onEditTransaction && (isSale || isSupply || tx.type === 'RETURN_SALE' || tx.type === 'QUOTATION') && (() => {
+                          const txTime = new Date(tx.date).getTime();
+                          const elapsedMs = Date.now() - txTime;
+                          const isWithin5Days = !isNaN(txTime) && elapsedMs <= 5 * 24 * 60 * 60 * 1000;
+                          const remainingDays = isWithin5Days ? Math.ceil(Math.max(0, 5 * 24 * 60 * 60 * 1000 - elapsedMs) / (1000 * 60 * 60 * 24)) : 0;
+                          return (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isWithin5Days) {
+                                  onEditTransaction(tx);
+                                } else {
+                                  alert(isRtl ? 'انتهت مهلة التعديل (مسموح خلال 5 أيام فقط من تاريخ الإصدار)' : 'Modification period expired (5 days limit)');
+                                }
+                              }}
+                              title={isWithin5Days
+                                ? `${t.editInvoice} (${isRtl ? `متبقي ${remainingDays} أيام` : `${remainingDays} days remaining`})`
+                                : (isRtl ? 'انتهت مهلة التعديل (5 أيام)' : '5-day edit period expired')}
+                              aria-label={t.editInvoice}
+                              className={`min-w-[38px] min-h-[38px] flex items-center justify-center rounded-xl transition-all ${
+                                isWithin5Days
+                                  ? 'text-slate-600 hover:text-amber-600 hover:bg-amber-50 active:scale-95'
+                                  : 'text-slate-300 cursor-not-allowed'
+                              }`}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          );
+                        })()}
 
                         {/* Void button */}
                         {!isVoid && onVoidTransaction && (

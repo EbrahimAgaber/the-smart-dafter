@@ -68,10 +68,16 @@ export function sanitizePhoneNumber(phone: string): string {
   // 2. Remove all non-digit characters except leading '+'
   let cleaned = normalized.replace(/[^\d+]/g, '');
 
-  if (cleaned.startsWith('+')) {
-    cleaned = cleaned.substring(1);
-  } else if (cleaned.startsWith('00')) {
+  // Strip duplicate leading + or 00 or 966 prefixes (e.g. 966+966... or +966...)
+  cleaned = cleaned.replace(/^\++/, '');
+  if (cleaned.startsWith('00')) {
     cleaned = cleaned.substring(2);
+  }
+  // If user pasted or prefixed 966 twice (e.g. 9669665... or 96605...)
+  if (cleaned.startsWith('966966')) {
+    cleaned = cleaned.substring(3);
+  } else if (cleaned.startsWith('96605')) {
+    cleaned = '966' + cleaned.substring(4);
   }
 
   // 3. Smart local number handling without requiring the user to type country code (+966)
@@ -131,6 +137,18 @@ export function formatDisplayPhone(phone: string): string {
     return `${local.substring(0, 3)} ${local.substring(3, 6)} ${local.substring(6)}`;
   }
   return phone;
+}
+
+/**
+ * Normalizes phone number into clean local input display without redundant country code prefix
+ */
+export function formatLocalPhoneInput(phone: string): string {
+  if (!phone) return '';
+  const sanitized = sanitizePhoneNumber(phone);
+  if (sanitized.startsWith('966') && sanitized.length === 12) {
+    return '0' + sanitized.substring(3);
+  }
+  return phone.trim();
 }
 
 /**

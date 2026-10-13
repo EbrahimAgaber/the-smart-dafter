@@ -190,7 +190,12 @@ export function buildSmartWhatsAppMessage(
         if (transaction.taxAmount && transaction.taxAmount > 0) {
           msg += `🏷️ يشمل ضريبة القيمة المضافة: ${formatCurrency(transaction.taxAmount, currency, 'ar')}\n`;
         }
-        msg += `ℹ️ *ملاحظة:* هذا عرض سعر تقديري صالح لمدة 15 يوماً ولا يترتب عليه أي التزام مالي حالي حتى اعتماده.\n`;
+        const validityDays = transaction.quotationValidityDays || 15;
+        msg += `⏱️ *مدة السريان:* صالح لمدة ${validityDays} يوماً من تاريخ الإصدار.\n`;
+        if (transaction.quotationTerms) {
+          msg += `📜 *شروط العرض:* ${transaction.quotationTerms}\n`;
+        }
+        msg += `ℹ️ *ملاحظة:* هذا عرض سعر تقديري لا يترتب عليه أي التزام مالي حالي حتى اعتماده وتحويله لفاتورة مبيعات.\n`;
       } else if (transaction.type === 'RETURN_SALE') {
         msg += `💰 إجمالي المرتجع: *${formatCurrency(transaction.totalAmount, currency, 'ar')}*\n`;
         if (transaction.paidAmount > 0) {
@@ -276,7 +281,12 @@ export function buildSmartWhatsAppMessage(
         if (transaction.taxAmount && transaction.taxAmount > 0) {
           msg += `🏷️ VAT Included: ${formatCurrency(transaction.taxAmount, currency, 'en')}\n`;
         }
-        msg += `ℹ️ *Note:* Price quotation valid for 15 days. No financial debit or obligation until officially approved.\n`;
+        const validityDays = transaction.quotationValidityDays || 15;
+        msg += `⏱️ *Validity Period:* Valid for ${validityDays} days from date of issue.\n`;
+        if (transaction.quotationTerms) {
+          msg += `📜 *Terms & Conditions:* ${transaction.quotationTerms}\n`;
+        }
+        msg += `ℹ️ *Note:* Price quotation only. No financial debit or obligation until officially approved and converted to invoice.\n`;
       } else if (transaction.type === 'RETURN_SALE') {
         msg += `💰 Return Total: *${formatCurrency(transaction.totalAmount, currency, 'en')}*\n`;
         if (transaction.paidAmount > 0) {

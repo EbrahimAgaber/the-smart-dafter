@@ -98,6 +98,7 @@ export default function App() {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const [modalParty, setModalParty] = useState<Party | null>(null);
   const [activeTxForPdf, setActiveTxForPdf] = useState<Transaction | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
 
   // Sync HTML dir and lang
   useEffect(() => {
@@ -182,6 +183,10 @@ export default function App() {
     paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
     customerPhone?: string;
     autoSendWhatsApp?: boolean;
+    dueDate?: string;
+    supplierInvoiceAttachment?: string;
+    quotationValidityDays?: number;
+    quotationTerms?: string;
   }) => {
     if (!checkCanCreateInvoice()) {
       setActiveModal('security-guard');
@@ -233,6 +238,64 @@ export default function App() {
   const handleVoidTransaction = (txId: string) => {
     store.voidTransaction(txId);
     refreshStoreData();
+  };
+
+  // Invoice modification handler (allowed within 5 days of issuance)
+  const handleEditInvoice = (tx: Transaction) => {
+    const check = store.canModifyInvoice(tx);
+    if (!check.allowed) {
+      alert(check.reason || (lang === 'ar' ? 'انتهت مهلة تعديل الفاتورة (مسموح خلال 5 أيام فقط)' : 'Invoice cannot be modified'));
+      return;
+    }
+    setEditingTransaction(tx);
+    const party = store.getPartyById(tx.partyId);
+    if (party) {
+      setModalParty(party);
+    }
+    setActiveModal(tx.type === 'SUPPLY_CREDIT' ? 'invoice-supply' : 'invoice-sale');
+  };
+
+  const handleUpdateTransaction = (txId: string, updatedData: any) => {
+    try {
+      const updatedTx = store.updateTransaction(txId, updatedData);
+      refreshStoreData();
+      setEditingTransaction(null);
+      setActiveModal(null);
+
+      const party = store.getPartyById(updatedTx.partyId);
+      if (party) {
+        // Auto-persist customer phone number to party profile if entered or updated
+        if (updatedData.customerPhone && updatedData.customerPhone.trim() !== (party.phone || '').trim()) {
+          store.updateParty(party.id, {
+            phone: updatedData.customerPhone.trim(),
+          });
+          refreshStoreData();
+        }
+
+        setActiveTxForPdf(updatedTx);
+        setModalParty(party);
+        setActiveModal('invoice-pdf');
+      }
+    } catch (err: any) {
+      console.error('Failed to update invoice:', err);
+      alert(err?.message || (lang === 'ar' ? 'فشل حفظ تعديل الفاتورة' : 'Failed to update invoice'));
+    }
+  };
+
+  // Convert Quotation to Invoice handler
+  const handleConvertToInvoice = (quotationTx: Transaction) => {
+    try {
+      const newInvoice = store.convertQuotationToInvoice(quotationTx.id);
+      refreshStoreData();
+      const party = store.getPartyById(newInvoice.partyId);
+      if (party) {
+        setModalParty(party);
+        setActiveTxForPdf(newInvoice);
+        setActiveModal('invoice-pdf');
+      }
+    } catch (err) {
+      console.error('Failed to convert quotation to invoice:', err);
+    }
   };
 
   // Gatekeepers for Invoice / Receipt / Voucher Creation via Security Guard
@@ -463,6 +526,7 @@ export default function App() {
             setActiveModal('invoice-pdf');
           }}
           onVoidTransaction={handleVoidTransaction}
+          onEditTransaction={handleEditInvoice}
         />
       ) : activeTab === 'dashboard' ? (
         <DashboardView
@@ -483,6 +547,7 @@ export default function App() {
               setActiveModal('invoice-pdf');
             }
           }}
+          onEditTransaction={handleEditInvoice}
           onNavigateParties={(region) => {
             const cleanRegion = typeof region === 'string' && region.trim() ? region.trim() : 'all';
             setSelectedRegionFilter(cleanRegion);
@@ -551,8 +616,13 @@ export default function App() {
             profile={profile}
             lang={lang}
             initialPartyId={modalParty?.id}
-            onClose={() => setActiveModal(null)}
+            existingTransaction={editingTransaction || undefined}
+            onClose={() => {
+              setActiveModal(null);
+              setEditingTransaction(null);
+            }}
             onSubmit={handleCreateTransaction}
+            onUpdate={handleUpdateTransaction}
             onAddParty={handleAddParty}
             onAddProduct={handleAddProduct}
           />
@@ -568,8 +638,13 @@ export default function App() {
             profile={profile}
             lang={lang}
             initialPartyId={modalParty?.id}
-            onClose={() => setActiveModal(null)}
+            existingTransaction={editingTransaction || undefined}
+            onClose={() => {
+              setActiveModal(null);
+              setEditingTransaction(null);
+            }}
             onSubmit={handleCreateTransaction}
+            onUpdate={handleUpdateTransaction}
             onAddParty={handleAddParty}
             onAddProduct={handleAddProduct}
           />
@@ -617,6 +692,8 @@ export default function App() {
                 setActiveTxForPdf(null);
               }}
               onVoidTransaction={handleVoidTransaction}
+              onConvertToInvoice={handleConvertToInvoice}
+              onEditInvoice={handleEditInvoice}
             />
           </Suspense>
         )}

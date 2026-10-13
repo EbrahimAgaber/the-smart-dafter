@@ -22,7 +22,7 @@ import {
   Camera,
   RotateCcw,
 } from 'lucide-react';
-import { BusinessProfile, Language, LineItem, Party, Product, TransactionType } from '../types';
+import { BusinessProfile, Language, LineItem, Party, Product, Transaction, TransactionType } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { formatCurrency, sanitizePhoneNumber } from '../utils/formatters';
 import { playSuccessChime, getAvatarColorClass } from '../utils/speechFeedback';
@@ -34,6 +34,7 @@ interface InvoiceCreatorModalProps {
   profile: BusinessProfile;
   lang: Language;
   initialPartyId?: string;
+  existingTransaction?: Transaction;
   onClose: () => void;
   onSubmit: (txData: {
     partyId: string;
@@ -52,7 +53,10 @@ interface InvoiceCreatorModalProps {
     autoSendWhatsApp?: boolean;
     dueDate?: string;
     supplierInvoiceAttachment?: string;
+    quotationValidityDays?: number;
+    quotationTerms?: string;
   }) => void;
+  onUpdate?: (txId: string, txData: any) => void;
   onAddParty?: (partyData: Omit<Party, 'id' | 'currentBalance' | 'createdAt'>) => Party;
   onAddProduct?: (prodData: Omit<Product, 'id'>) => Product;
 }
@@ -64,8 +68,10 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   profile,
   lang,
   initialPartyId,
+  existingTransaction,
   onClose,
   onSubmit,
+  onUpdate,
   onAddParty,
   onAddProduct,
 }) => {
@@ -73,7 +79,9 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   const currency = profile.currency || 'SAR';
   const isRtl = lang === 'ar';
 
-  const [docMode, setDocMode] = useState<TransactionType>(type);
+  const [docMode, setDocMode] = useState<TransactionType>(
+    existingTransaction ? existingTransaction.type : type
+  );
   const isSale = docMode === 'SALE_CREDIT' || docMode === 'QUOTATION' || docMode === 'RETURN_SALE';
   const targetPartyType = isSale ? 'CUSTOMER' : 'DISTRIBUTOR';
 
@@ -83,7 +91,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   }, [parties, targetPartyType]);
 
   const [selectedPartyId, setSelectedPartyId] = useState<string>(
-    initialPartyId || (eligibleParties[0]?.id || '')
+    existingTransaction ? existingTransaction.partyId : (initialPartyId || (eligibleParties[0]?.id || ''))
   );
 
   // Selected party object
@@ -103,8 +111,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
     }
   }, [selectedParty]);
 
-  // Auto-send invoice via WhatsApp toggle
-  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState<boolean>(true);
+  // Auto-send invoice via WhatsApp toggle (disabled by default when editing)
+  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState<boolean>(!existingTransaction);
 
   // Party search query & modal dropdown
   const [partySearchQuery, setPartySearchQuery] = useState('');
@@ -131,18 +139,51 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
   // Autocomplete state for inline item name editing
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState<number | null>(null);
 
-  // Line items state (start empty or with 1 clean row if user wants custom)
-  const [items, setItems] = useState<LineItem[]>([]);
+  // Line items state (initialized from existing invoice if editing)
+  const [items, setItems] = useState<LineItem[]>(() => {
+    if (existingTransaction && existingTransaction.items) {
+      return [...existingTransaction.items];
+    }
+    return [];
+  });
 
-  const [paidNowInput, setPaidNowInput] = useState<string>('0');
-  const [discountInput, setDiscountInput] = useState<string>('0');
-  const [applyVat, setApplyVat] = useState<boolean>(profile.isVatEnabled ?? true);
-  const [notes, setNotes] = useState<string>('');
-  const [dueDate, setDueDate] = useState<string>('');
-  const [supplierInvoicePhoto, setSupplierInvoicePhoto] = useState<string | null>(null);
+  const [paidNowInput, setPaidNowInput] = useState<string>(() => {
+    return existingTransaction ? String(existingTransaction.paidAmount ?? 0) : '0';
+  });
+  const [discountInput, setDiscountInput] = useState<string>(() => {
+    return existingTransaction ? String(existingTransaction.discountAmount ?? 0) : '0';
+  });
+  const [applyVat, setApplyVat] = useState<boolean>(() => {
+    if (existingTransaction) {
+      return Boolean(existingTransaction.taxAmount && existingTransaction.taxAmount > 0);
+    }
+    return profile.isVatEnabled ?? true;
+  });
+  const [notes, setNotes] = useState<string>(() => existingTransaction?.notes || '');
+  const [dueDate, setDueDate] = useState<string>(() => existingTransaction?.dueDate || '');
+  const [supplierInvoicePhoto, setSupplierInvoicePhoto] = useState<string | null>(() => existingTransaction?.supplierInvoiceAttachment || null);
   const [returnReason, setReturnReason] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'CHEQUE'>('CASH');
+  const [quotationValidityDays, setQuotationValidityDays] = useState<number>(() => existingTransaction?.quotationValidityDays || 15);
+  const [quotationTerms, setQuotationTerms] = useState<string>(() => existingTransaction?.quotationTerms || '');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER' | 'CHEQUE'>(() => existingTransaction?.paymentMethod || 'CASH');
   const [validationError, setValidationError] = useState<string>('');
+
+  // 5-day grace period calculator for editing
+  const modificationGrace = useMemo(() => {
+    if (!existingTransaction) return null;
+    const txTime = new Date(existingTransaction.date).getTime();
+    if (isNaN(txTime)) return null;
+    const elapsedMs = Date.now() - txTime;
+    const maxMs = 5 * 24 * 60 * 60 * 1000;
+    const remainingMs = Math.max(0, maxMs - elapsedMs);
+    const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+    const remainingDays = Math.ceil(remainingHours / 24);
+    return {
+      allowed: elapsedMs <= maxMs,
+      remainingDays,
+      remainingHours,
+    };
+  }, [existingTransaction]);
 
   // Normalize text helper for Arabic & digit search
   const normalizeSearch = (str: string) => {
@@ -585,6 +626,30 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       ? `${isRtl ? 'سبب الإرجاع: ' : 'Return Reason: '}${returnReason}${notes.trim() ? ` - ${notes.trim()}` : ''}`
       : notes.trim();
 
+    if (existingTransaction && onUpdate) {
+      onUpdate(existingTransaction.id, {
+        partyId: selectedPartyId,
+        type: docMode,
+        items: validItems,
+        subtotalBeforeTax: netBeforeTax,
+        discountAmount,
+        taxRate,
+        taxAmount,
+        totalAmount,
+        paidAmount,
+        remainingBalanceDelta,
+        notes: finalNotes,
+        paymentMethod,
+        customerPhone: customerPhone.trim(),
+        autoSendWhatsApp,
+        dueDate: dueDate || undefined,
+        supplierInvoiceAttachment: supplierInvoicePhoto || undefined,
+        quotationValidityDays: docMode === 'QUOTATION' ? (Number(quotationValidityDays) || 15) : undefined,
+        quotationTerms: docMode === 'QUOTATION' ? (quotationTerms.trim() || undefined) : undefined,
+      });
+      return;
+    }
+
     onSubmit({
       partyId: selectedPartyId,
       type: docMode,
@@ -602,6 +667,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       autoSendWhatsApp,
       dueDate: dueDate || undefined,
       supplierInvoiceAttachment: supplierInvoicePhoto || undefined,
+      quotationValidityDays: docMode === 'QUOTATION' ? (Number(quotationValidityDays) || 15) : undefined,
+      quotationTerms: docMode === 'QUOTATION' ? (quotationTerms.trim() || undefined) : undefined,
     });
   };
 
@@ -639,10 +706,14 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-bold text-slate-900 leading-tight">
-                {isSale ? t.creditSaleTitle : t.supplyIntakeTitle}
+                {existingTransaction
+                  ? `${t.editInvoiceTitle} #${existingTransaction.receiptNumber}`
+                  : (isSale ? t.creditSaleTitle : t.supplyIntakeTitle)}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {isRtl ? 'تسجيل فوري مع إرسال تلقائي للواتساب وحفظ الرقم' : 'Instant invoice entry & auto WhatsApp'}
+                {existingTransaction
+                  ? (isRtl ? 'تعديل أو حذف أو إضافة بنود وأصناف على الفاتورة' : 'Add, delete, or modify invoice line items')
+                  : (isRtl ? 'تسجيل فوري مع إرسال تلقائي للواتساب وحفظ الرقم' : 'Instant invoice entry & auto WhatsApp')}
               </p>
             </div>
           </div>
@@ -655,6 +726,27 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Notice Banner for 5-day editing grace period */}
+        {existingTransaction && (
+          <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="p-1 rounded-lg bg-amber-200/80 text-amber-900 font-bold text-[10px]">5 {isRtl ? 'أيام' : 'days'}</span>
+              <span className="font-semibold">
+                {modificationGrace?.allowed
+                  ? (isRtl
+                    ? `مسموح بالتعديل - متبقي ${modificationGrace.remainingDays} أيام (${modificationGrace.remainingHours} ساعة) في المهلة المحددة`
+                    : `Modification permitted - ${modificationGrace.remainingDays} days remaining`)
+                  : (isRtl
+                    ? 'تحذير: انتهت مهلة الـ 5 أيام المسموح فيها بتعديل هذه الفاتورة'
+                    : 'Notice: 5-day modification period has expired')}
+              </span>
+            </div>
+            <span className="font-mono text-[11px] font-bold text-amber-700 bg-white px-2 py-0.5 rounded-md border border-amber-200">
+              #{existingTransaction.receiptNumber}
+            </span>
+          </div>
+        )}
 
         {validationError && (
           <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2 shrink-0">
@@ -942,6 +1034,60 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                 </div>
               </label>
             </div>
+
+            {/* Quotation Terms & Duration Configurator */}
+            {docMode === 'QUOTATION' && (
+              <div className="pt-2 border-t border-indigo-200/60 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-bold text-indigo-900 flex items-center gap-1.5 shrink-0">
+                    <span>⏱️</span>
+                    <span>{isRtl ? 'مدة سريان عرض السعر (أيام):' : 'Quote Validity (Days):'}</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    {[7, 15, 30].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() => setQuotationValidityDays(days)}
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${
+                          quotationValidityDays === days
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50'
+                        }`}
+                      >
+                        {days} {isRtl ? 'يوم' : 'd'}
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={quotationValidityDays}
+                      onChange={(e) => setQuotationValidityDays(parseInt(e.target.value) || 1)}
+                      className="w-16 bg-white text-slate-900 font-mono font-bold text-xs rounded-xl px-2 py-1 border border-indigo-200 focus:outline-none focus:border-indigo-500 shadow-2xs text-center"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                    <span>📜</span>
+                    <span>{isRtl ? 'شروط وأحكام العرض المخصصة:' : 'Custom Quote Terms & Conditions:'}</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={quotationTerms}
+                    onChange={(e) => setQuotationTerms(e.target.value)}
+                    placeholder={
+                      isRtl
+                        ? 'مثال: الأسعار شاملة التوصيل، الدفع نقداً عند الاستلام، التسليم خلال يومين...'
+                        : 'e.g. Includes delivery, cash on delivery, valid subject to stock...'
+                    }
+                    className="w-full bg-white text-slate-900 text-xs rounded-xl px-3 py-2 border border-indigo-200 focus:outline-none focus:border-indigo-500 shadow-2xs"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Payment Due Date for Credit Sales */}
             {docMode === 'SALE_CREDIT' && (
@@ -1783,7 +1929,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
               type="submit"
               className="flex-2 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-black text-xs shadow-md shadow-cyan-950/20 transition-all active:scale-98 min-h-[48px] flex items-center justify-center gap-2"
             >
-              <span>{t.saveTransaction}</span>
+              <span>{existingTransaction ? t.saveInvoiceModifications : t.saveTransaction}</span>
               <span className="font-mono bg-cyan-700/80 px-2 py-0.5 rounded-lg text-[11px]">
                 {formatCurrency(totalAmount, currency, lang)}
               </span>

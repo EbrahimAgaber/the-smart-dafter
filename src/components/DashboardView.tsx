@@ -17,6 +17,7 @@ import {
   MapPin,
   Search,
   X,
+  Edit2,
 } from 'lucide-react';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
@@ -40,6 +41,7 @@ interface DashboardViewProps {
   onOpenPayDistributor: () => void;
   onSelectTransaction: (tx: Transaction) => void;
   onNavigateParties: (region?: string) => void;
+  onEditTransaction?: (tx: Transaction) => void;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
@@ -54,6 +56,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenPayDistributor,
   onSelectTransaction,
   onNavigateParties,
+  onEditTransaction,
 }) => {
   const t = getTranslation(lang);
   const currency = profile.currency || 'SAR';
@@ -511,35 +514,69 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   </div>
 
                   {/* Financial amount and delta badge */}
-                  <div className="text-end shrink-0 ps-2">
-                    <div className="text-sm font-black text-slate-900 font-mono">
-                      {formatCurrency(tx.totalAmount, currency, lang)}
-                    </div>
-                    {tx.paidAmount > 0 && tx.type === 'SALE_CREDIT' && (
-                      <div className="text-[11px] text-green-600 font-mono font-medium mt-0.5">
-                        {isRtl ? `مسدد: ${formatCurrency(tx.paidAmount, currency, lang)}` : `Paid: ${formatCurrency(tx.paidAmount, currency, lang)}`}
+                  <div className="flex items-center gap-2 shrink-0 ps-2">
+                    <div className="text-end">
+                      <div className="text-sm font-black text-slate-900 font-mono">
+                        {formatCurrency(tx.totalAmount, currency, lang)}
                       </div>
-                    )}
-                    {tx.type === 'QUOTATION' && (
-                      <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
-                        {isRtl ? 'عرض سعر' : 'Quotation'}
-                      </span>
-                    )}
-                    {tx.type === 'RETURN_SALE' && (
-                      <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md inline-block mt-1 font-mono">
-                        {isRtl ? `مرتجع: -${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}` : `Return: -${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}`}
-                      </span>
-                    )}
-                    {(tx.type === 'SALE_CREDIT' || tx.type === 'SUPPLY_CREDIT') && tx.totalAmount - tx.paidAmount > 0 && (
-                      <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md inline-block mt-1 font-mono">
-                        {isRtl ? `آجل: +${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}` : `Debt: +${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}`}
-                      </span>
-                    )}
-                    {tx.type === 'PAYMENT_RECEIVED' && (
-                      <span className="text-[11px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md inline-block mt-1">
-                        {isRtl ? `تم التحصيل` : `Collected`}
-                      </span>
-                    )}
+                      {tx.paidAmount > 0 && tx.type === 'SALE_CREDIT' && (
+                        <div className="text-[11px] text-green-600 font-mono font-medium mt-0.5">
+                          {isRtl ? `مسدد: ${formatCurrency(tx.paidAmount, currency, lang)}` : `Paid: ${formatCurrency(tx.paidAmount, currency, lang)}`}
+                        </div>
+                      )}
+                      {tx.type === 'QUOTATION' && (
+                        <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
+                          {isRtl ? 'عرض سعر' : 'Quotation'}
+                        </span>
+                      )}
+                      {tx.type === 'RETURN_SALE' && (
+                        <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md inline-block mt-1 font-mono">
+                          {isRtl ? `مرتجع: -${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}` : `Return: -${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}`}
+                        </span>
+                      )}
+                      {(tx.type === 'SALE_CREDIT' || tx.type === 'SUPPLY_CREDIT') && tx.totalAmount - tx.paidAmount > 0 && (
+                        <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-md inline-block mt-1 font-mono">
+                          {isRtl ? `آجل: +${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}` : `Debt: +${formatCurrency(tx.totalAmount - tx.paidAmount, currency, lang)}`}
+                        </span>
+                      )}
+                      {tx.type === 'PAYMENT_RECEIVED' && (
+                        <span className="text-[11px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded-md inline-block mt-1">
+                          {isRtl ? `تم التحصيل` : `Collected`}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Quick Edit button (within 5-day grace period) */}
+                    {!tx.isVoided && onEditTransaction && (tx.type === 'SALE_CREDIT' || tx.type === 'SUPPLY_CREDIT' || tx.type === 'RETURN_SALE' || tx.type === 'QUOTATION') && (() => {
+                      const txTime = new Date(tx.date).getTime();
+                      const elapsedMs = Date.now() - txTime;
+                      const isWithin5Days = !isNaN(txTime) && elapsedMs <= 5 * 24 * 60 * 60 * 1000;
+                      const remainingDays = isWithin5Days ? Math.ceil(Math.max(0, 5 * 24 * 60 * 60 * 1000 - elapsedMs) / (1000 * 60 * 60 * 24)) : 0;
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isWithin5Days) {
+                              onEditTransaction(tx);
+                            } else {
+                              alert(isRtl ? 'انتهت مهلة التعديل (مسموح خلال 5 أيام فقط من تاريخ الإصدار)' : 'Modification period expired (5 days limit)');
+                            }
+                          }}
+                          title={isWithin5Days
+                            ? `${t.editInvoice} (${isRtl ? `متبقي ${remainingDays} أيام` : `${remainingDays} days remaining`})`
+                            : (isRtl ? 'انتهت مهلة التعديل (5 أيام)' : '5-day edit period expired')}
+                          aria-label={t.editInvoice}
+                          className={`min-w-[34px] min-h-[34px] p-2 flex items-center justify-center rounded-xl transition-all ${
+                            isWithin5Days
+                              ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50 active:scale-95 border border-transparent hover:border-amber-200'
+                              : 'text-slate-200 cursor-not-allowed'
+                          }`}
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               );

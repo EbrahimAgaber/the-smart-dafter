@@ -19,6 +19,7 @@ export interface GenerateInvoicePdfOptions {
   zatcaQrDataUrl?: string;
   isVatApplied?: boolean;
   lang?: Language;
+  format?: 'A4' | 'THERMAL_80MM' | 'MOBILE_PHONE';
 }
 
 export interface GenerateStatementPdfOptions {
@@ -671,9 +672,760 @@ export async function generateStatementPdf(
 // Invoice & Voucher PDF Generator (ZATCA QR Vector Embedded)
 // ============================================================================
 
+// ============================================================================
+// Invoice & Voucher PDF Generator (ZATCA QR Vector Embedded + Items Summary)
+// ============================================================================
+
+async function generateThermal80mmInvoicePdf(
+  options: GenerateInvoicePdfOptions
+): Promise<jsPDF> {
+  const { profile, transaction, party, zatcaQrDataUrl, isVatApplied = false, lang = 'ar' } = options;
+  const isRtl = lang === 'ar';
+  const currency = profile.currency || 'SAR';
+  const naming = getDocumentNaming(transaction.type, lang, isVatApplied);
+  const items = transaction.items || [];
+  const totalItemTypes = items.length;
+  const totalUnitsSold = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+  const qrImg = zatcaQrDataUrl ? await loadImage(zatcaQrDataUrl) : null;
+  const logoImg = profile.logoBase64 ? await loadImage(profile.logoBase64) : null;
+
+  // 80mm width: 580px canvas width for ultra-sharp phone rendering
+  const WIDTH = 580;
+  const PADDING = 28;
+  const C_WIDTH = WIDTH - PADDING * 2;
+
+  // Estimate total canvas height
+  const baseH = 880;
+  const itemsH = items.length * 44;
+  const summaryH = items.length > 0 ? (items.length * 32 + 110) : 0;
+  const canvasHeight = Math.max(920, baseH + itemsH + summaryH);
+  if (typeof document === 'undefined') {
+    const fallbackDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [80, 200] });
+    fallbackDoc.text(`Thermal Invoice: ${transaction.receiptNumber}`, 5, 10);
+    return fallbackDoc;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = WIDTH;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, WIDTH, canvasHeight);
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+
+  let y = 32;
+
+  // Logo if present
+  if (logoImg) {
+    const lSize = 64;
+    ctx.drawImage(logoImg, (WIDTH - lSize) / 2, y, lSize, lSize);
+    y += lSize + 10;
+  }
+
+  // Store Name (Large bold)
+  ctx.font = 'bold 24px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.textAlign = 'center';
+  ctx.fillText(profile.name, WIDTH / 2, y + 20);
+  y += 32;
+
+  // Phone & Tax
+  ctx.font = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#475569';
+  if (profile.phone) {
+    ctx.fillText(`${isRtl ? 'هاتف: ' : 'Phone: '} ${profile.phone}`, WIDTH / 2, y + 16);
+    y += 24;
+  }
+  if (profile.taxNumber) {
+    ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, WIDTH / 2, y + 16);
+    y += 24;
+  }
+
+  // Divider
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(PADDING, y + 8);
+  ctx.lineTo(WIDTH - PADDING, y + 8);
+  ctx.stroke();
+  y += 20;
+
+  // Doc Title Badge
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 38, 8, naming.color || '#0f172a');
+  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText(naming.title, WIDTH / 2, y + 25);
+  y += 48;
+
+  // Receipt Number & Date
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", monospace';
+  ctx.fillStyle = '#0f172a';
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  ctx.fillText(`#${transaction.receiptNumber}`, isRtl ? WIDTH - PADDING : PADDING, y + 16);
+
+  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = isRtl ? 'left' : 'right';
+  ctx.fillText(formatDate(transaction.date, lang), isRtl ? PADDING : WIDTH - PADDING, y + 16);
+  y += 30;
+
+  // Customer Card
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 68, 8, '#f8fafc', '#e2e8f0', 1);
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText(naming.recipientLabel, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 22);
+
+  ctx.font = 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(party.name, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 46);
+
+  if (party.phone) {
+    ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.textAlign = isRtl ? 'left' : 'right';
+    ctx.fillText(party.phone, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 46);
+  }
+  y += 82;
+
+  // Items Table
+  if (items.length > 0) {
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 34, 6, '#1e293b');
+    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ffffff';
+
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(isRtl ? 'الصنف' : 'Item', isRtl ? WIDTH - PADDING - 10 : PADDING + 10, y + 22);
+    ctx.textAlign = 'center';
+    ctx.fillText(isRtl ? 'الكمية' : 'Qty', WIDTH / 2 + (isRtl ? 10 : -10), y + 22);
+    ctx.textAlign = isRtl ? 'left' : 'right';
+    ctx.fillText(isRtl ? 'الإجمالي' : 'Total', isRtl ? PADDING + 10 : WIDTH - PADDING - 10, y + 22);
+    y += 34;
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (i % 2 === 1) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(PADDING, y, C_WIDTH, 38);
+      }
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(PADDING, y, C_WIDTH, 38);
+
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.textAlign = isRtl ? 'right' : 'left';
+      ctx.fillText(fitText(ctx, it.name, 230), isRtl ? WIDTH - PADDING - 10 : PADDING + 10, y + 24);
+
+      ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${it.quantity} × ${it.unitPrice}`, WIDTH / 2 + (isRtl ? 10 : -10), y + 24);
+
+      ctx.textAlign = isRtl ? 'left' : 'right';
+      ctx.fillText(formatCurrency(it.subtotal, currency, lang), isRtl ? PADDING + 10 : WIDTH - PADDING - 10, y + 24);
+      y += 38;
+    }
+
+    y += 14;
+
+    // SUMMARY TABLE: How many items sold (ملخص الأصناف والكميات المباعة)
+    const sumBoxH = 40 + items.length * 28 + 36;
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumBoxH, 8, '#f0fdf4', '#86efac', 1.2);
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#166534';
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(
+      isRtl
+        ? `📊 ملخص الكميات المباعة: ${totalUnitsSold} قطعة (${totalItemTypes} أصناف)`
+        : `📊 Units Sold Summary: ${totalUnitsSold} Units (${totalItemTypes} Items)`,
+      isRtl ? WIDTH - PADDING - 12 : PADDING + 12,
+      y + 25
+    );
+    y += 36;
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const ratio = totalUnitsSold > 0 ? ((Number(it.quantity) / totalUnitsSold) * 100).toFixed(0) : '0';
+      ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#334155';
+      ctx.textAlign = isRtl ? 'right' : 'left';
+      ctx.fillText(`${i + 1}. ${fitText(ctx, it.name, 210)}`, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 18);
+
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", monospace';
+      ctx.fillStyle = '#15803d';
+      ctx.fillText(`${it.quantity} ${isRtl ? 'قطعة' : 'pcs'} (${ratio}%)`, WIDTH / 2 + 10, y + 18);
+
+      ctx.textAlign = isRtl ? 'left' : 'right';
+      ctx.fillStyle = '#0f172a';
+      ctx.fillText(formatCurrency(it.subtotal, currency, lang), isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 18);
+      y += 28;
+    }
+
+    // Summary Total footer line
+    ctx.strokeStyle = '#86efac';
+    ctx.beginPath();
+    ctx.moveTo(PADDING + 10, y + 4);
+    ctx.lineTo(WIDTH - PADDING - 10, y + 4);
+    ctx.stroke();
+
+    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#14532d';
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(isRtl ? 'إجمالي عدد القطع المباعة:' : 'Total Pieces Sold:', isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 22);
+    ctx.textAlign = isRtl ? 'left' : 'right';
+    ctx.fillStyle = '#15803d';
+    ctx.fillText(`${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 22);
+    y += 40;
+  }
+
+  // Financial Breakdown Box
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 170, 8, '#f8fafc', '#cbd5e1', 1);
+  let fY = y + 26;
+  const drawFinLine = (lbl: string, val: string, isBld = false, clr = '#0f172a') => {
+    ctx.font = isBld ? 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif' : '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = clr;
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(lbl, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, fY);
+    ctx.textAlign = isRtl ? 'left' : 'right';
+    ctx.fillText(val, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, fY);
+    fY += 26;
+  };
+
+  const subtotal = transaction.subtotalBeforeTax ?? transaction.totalAmount;
+  drawFinLine(isRtl ? 'المجموع قبل الضريبة:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+  if (transaction.discountAmount && transaction.discountAmount > 0) {
+    drawFinLine(isRtl ? 'الخصم الممنوح:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+  }
+  if (isVatApplied && transaction.taxAmount && transaction.taxAmount > 0) {
+    drawFinLine(`${isRtl ? 'الضريبة ' : 'VAT '}(${transaction.taxRate || 15}%):`, formatCurrency(transaction.taxAmount, currency, lang));
+  }
+  drawFinLine(isRtl ? 'الإجمالي النهائي:' : 'Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+  if (transaction.paidAmount > 0) {
+    drawFinLine(isRtl ? 'المدفوع نقداً:' : 'Paid Amount:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
+  }
+  const rem = Math.max(0, transaction.totalAmount - transaction.paidAmount);
+  if (rem > 0) {
+    drawFinLine(isRtl ? 'المتبقي بالآجل:' : 'Remaining Debt:', formatCurrency(rem, currency, lang), true, '#b91c1c');
+  }
+  y += 185;
+
+  // QR Code
+  if (qrImg) {
+    const qSize = 150;
+    ctx.drawImage(qrImg, (WIDTH - qSize) / 2, y, qSize, qSize);
+    y += qSize + 14;
+    ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    ctx.fillText(isRtl ? 'فاتورة ضريبية مبسطة - هيئة الزكاة والضريبة' : 'ZATCA Simplified Tax Invoice', WIDTH / 2, y + 10);
+    y += 24;
+  }
+
+  // Footer Note
+  if (profile.invoiceFooterNote) {
+    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'center';
+    ctx.fillText(profile.invoiceFooterNote, WIDTH / 2, y + 14);
+    y += 24;
+  }
+
+  // Branding
+  ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#cbd5e1';
+  ctx.textAlign = 'center';
+  ctx.fillText(isRtl ? 'الدفتر الذكي - The Smart Dafter' : 'The Smart Dafter Mobile POS', WIDTH / 2, y + 14);
+  y += 26;
+
+  const finalH = Math.max(400, y + 16);
+  const heightMm = Math.round((finalH / WIDTH) * 80);
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: [80, Math.max(120, heightMm)],
+    compress: true,
+  });
+
+  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  doc.addImage(imgData, 'JPEG', 0, 0, 80, heightMm, undefined, 'FAST');
+  canvas.width = 0;
+  canvas.height = 0;
+
+  return doc;
+}
+
+// ============================================================================
+// Mobile Phone Optimized PDF Generator (Ultra-large typography, no zoom needed)
+// ============================================================================
+
+async function generateMobilePhoneInvoicePdf(
+  options: GenerateInvoicePdfOptions
+): Promise<jsPDF> {
+  const { profile, transaction, party, zatcaQrDataUrl, isVatApplied = false, lang = 'ar' } = options;
+  const isRtl = lang === 'ar';
+  const currency = profile.currency || 'SAR';
+  const naming = getDocumentNaming(transaction.type, lang, isVatApplied);
+  const docTitle = naming.title;
+  const items = transaction.items || [];
+  const totalItemTypes = items.length;
+  const totalUnitsSold = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
+  if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // Font readiness fallback
+    }
+  }
+
+  const qrImg = zatcaQrDataUrl ? await loadImage(zatcaQrDataUrl) : null;
+  const logoImg = profile.logoBase64 ? await loadImage(profile.logoBase64) : null;
+
+  // 720px width: 2x sharp mobile canvas width tailored for phone displays
+  const WIDTH = 720;
+  const PADDING = 28;
+  const C_WIDTH = WIDTH - PADDING * 2; // 664px
+
+  // Estimate total canvas height
+  const baseH = 1100;
+  const itemsH = items.length * 50;
+  const summaryH = items.length > 0 ? (items.length * 44 + 160) : 0;
+  const qrH = qrImg ? 220 : 100;
+  const canvasHeight = Math.max(1200, baseH + itemsH + summaryH + qrH);
+  if (typeof document === 'undefined') {
+    const fallbackDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 240] });
+    fallbackDoc.text(`Mobile Invoice: ${transaction.receiptNumber}`, 5, 10);
+    return fallbackDoc;
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = WIDTH;
+  canvas.height = canvasHeight;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, WIDTH, canvasHeight);
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+
+  let y = 32;
+
+  // 1. Top Header Banner
+  if (logoImg) {
+    const lSize = 72;
+    ctx.drawImage(logoImg, isRtl ? WIDTH - PADDING - lSize : PADDING, y, lSize, lSize);
+  }
+
+  const textStartX = logoImg
+    ? (isRtl ? WIDTH - PADDING - 88 : PADDING + 88)
+    : (isRtl ? WIDTH - PADDING : PADDING);
+
+  ctx.save();
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  ctx.font = 'bold 30px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(fitText(ctx, profile.name, C_WIDTH - (logoImg ? 90 : 0)), textStartX, y + 32);
+
+  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#475569';
+  let subY = y + 60;
+  if (profile.phone) {
+    ctx.fillText(`${isRtl ? 'الهاتف: ' : 'Phone: '} ${profile.phone}`, textStartX, subY);
+    subY += 24;
+  }
+  if (profile.taxNumber) {
+    ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, textStartX, subY);
+  }
+  ctx.restore();
+
+  y += logoImg ? 92 : 82;
+
+  // Doc Title Badge & Reference
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 48, 8, naming.color || '#0f172a');
+  ctx.save();
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+  ctx.font = 'bold 22px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.fillText(docTitle, WIDTH / 2, y + 32);
+  ctx.restore();
+  y += 60;
+
+  // Receipt Number & Date (Bolder & larger font for instant phone reading)
+  ctx.save();
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+  ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", monospace';
+  ctx.fillStyle = '#0f172a';
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  ctx.fillText(`#${transaction.receiptNumber}`, isRtl ? WIDTH - PADDING : PADDING, y + 18);
+
+  ctx.font = 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = isRtl ? 'left' : 'right';
+  ctx.fillText(formatDate(transaction.date, lang), isRtl ? PADDING : WIDTH - PADDING, y + 18);
+  ctx.restore();
+  y += 34;
+
+  // Recipient / Customer Card
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 96, 10, '#f8fafc', '#cbd5e1', 1.2);
+  ctx.save();
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  const recX = isRtl ? WIDTH - PADDING - 18 : PADDING + 18;
+
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText(naming.recipientLabel, recX, y + 26);
+
+  ctx.font = 'bold 24px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(fitText(ctx, party.name, C_WIDTH - 240), recX, y + 56);
+
+  if (party.phone) {
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#475569';
+    ctx.fillText(party.phone, recX, y + 84);
+  }
+
+  // Current balance callout inside recipient card
+  ctx.textAlign = isRtl ? 'left' : 'right';
+  const balX = isRtl ? PADDING + 18 : WIDTH - PADDING - 18;
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.fillText(isRtl ? 'الرصيد الحالي:' : 'Balance:', balX, y + 26);
+
+  ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", monospace';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(formatCurrency(party.currentBalance, currency, lang), balX, y + 56);
+  ctx.restore();
+  y += 112;
+
+  // 2. Line Items Table (For Sale, Supply, Return)
+  if (items.length > 0) {
+    const itemCols = [
+      { key: 'idx', width: 44, title: '#' },
+      { key: 'name', width: 310, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description' },
+      { key: 'qty', width: 100, title: isRtl ? 'الكمية' : 'Qty' },
+      { key: 'price', width: 100, title: isRtl ? 'السعر' : 'Price' },
+      { key: 'total', width: 110, title: isRtl ? 'الإجمالي' : 'Total' },
+    ];
+
+    // Table Header (Enlarged 18px font)
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 44, 6, '#1e293b');
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ffffff';
+
+    let hX = isRtl ? WIDTH - PADDING : PADDING;
+    for (const col of itemCols) {
+      if (isRtl) {
+        ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'right' : 'left';
+        const cX = ctx.textAlign === 'right' ? hX - 10 : hX - col.width + 10;
+        ctx.fillText(col.title, cX, y + 28);
+        hX -= col.width;
+      } else {
+        ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'left' : 'right';
+        const cX = ctx.textAlign === 'left' ? hX + 10 : hX + col.width - 10;
+        ctx.fillText(col.title, cX, y + 28);
+        hX += col.width;
+      }
+    }
+    ctx.restore();
+    y += 44;
+
+    // Items Rows (Row height 46px, font 18px)
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (i % 2 === 1) {
+        ctx.fillStyle = '#f8fafc';
+        ctx.fillRect(PADDING, y, C_WIDTH, 46);
+      }
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(PADDING, y, C_WIDTH, 46);
+
+      ctx.save();
+      ctx.direction = isRtl ? 'rtl' : 'ltr';
+      ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#1e293b';
+
+      let rowX = isRtl ? WIDTH - PADDING : PADDING;
+      for (const col of itemCols) {
+        let text = '';
+        if (col.key === 'idx') text = String(i + 1);
+        else if (col.key === 'name') text = fitText(ctx, it.name, col.width - 16);
+        else if (col.key === 'qty') text = String(it.quantity);
+        else if (col.key === 'price') text = formatCurrency(it.unitPrice, currency, lang);
+        else if (col.key === 'total') text = formatCurrency(it.subtotal, currency, lang);
+
+        if (isRtl) {
+          ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'right' : 'left';
+          const cX = ctx.textAlign === 'right' ? rowX - 10 : rowX - col.width + 10;
+          ctx.fillText(text, cX, y + 30);
+          rowX -= col.width;
+        } else {
+          ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'left' : 'right';
+          const cX = ctx.textAlign === 'left' ? rowX + 10 : rowX + col.width - 10;
+          ctx.fillText(text, cX, y + 30);
+          rowX += col.width;
+        }
+      }
+      ctx.restore();
+      y += 46;
+    }
+
+    // 3. Summary Table: Items & Quantities Sold (جدول ملخص الكميات والأصناف المباعة)
+    y += 18;
+    const sumHeaderH = 42;
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumHeaderH, 6, '#0f766e');
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(
+      isRtl
+        ? `📊 ملخص الأصناف والكميات المباعة (إجمالي: ${totalUnitsSold} قطعة في ${totalItemTypes} أصناف)`
+        : `📊 Items Sold Summary (${totalUnitsSold} Units in ${totalItemTypes} Items)`,
+      isRtl ? WIDTH - PADDING - 14 : PADDING + 14,
+      y + 28
+    );
+    ctx.restore();
+    y += sumHeaderH;
+
+    // Summary Subtable Columns
+    const sumCols = [
+      { key: 'idx', width: 44, title: '#' },
+      { key: 'name', width: 280, title: isRtl ? 'اسم الصنف' : 'Item Name' },
+      { key: 'qty', width: 130, title: isRtl ? 'الكمية المباعة' : 'Units Sold' },
+      { key: 'ratio', width: 80, title: isRtl ? 'النسبة' : 'Ratio' },
+      { key: 'subtotal', width: 130, title: isRtl ? 'القيمة' : 'Subtotal' },
+    ];
+
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 36, 0, '#f1f5f9', '#cbd5e1', 1);
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#334155';
+    let sColX = isRtl ? WIDTH - PADDING : PADDING;
+    for (const c of sumCols) {
+      if (isRtl) {
+        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
+        const scX = ctx.textAlign === 'right' ? sColX - 8 : sColX - c.width + 8;
+        ctx.fillText(c.title, scX, y + 24);
+        sColX -= c.width;
+      } else {
+        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
+        const scX = ctx.textAlign === 'left' ? sColX + 8 : sColX + c.width - 8;
+        ctx.fillText(c.title, scX, y + 24);
+        sColX += c.width;
+      }
+    }
+    ctx.restore();
+    y += 36;
+
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const ratio = totalUnitsSold > 0 ? ((Number(it.quantity) / totalUnitsSold) * 100).toFixed(0) : '0';
+      ctx.fillStyle = i % 2 === 1 ? '#f8fafc' : '#ffffff';
+      ctx.fillRect(PADDING, y, C_WIDTH, 40);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(PADDING, y, C_WIDTH, 40);
+
+      ctx.save();
+      ctx.direction = isRtl ? 'rtl' : 'ltr';
+      ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#1e293b';
+
+      let rowX = isRtl ? WIDTH - PADDING : PADDING;
+      for (const c of sumCols) {
+        let text = '';
+        if (c.key === 'idx') text = String(i + 1);
+        else if (c.key === 'name') text = fitText(ctx, it.name, c.width - 16);
+        else if (c.key === 'qty') text = `${it.quantity} ${isRtl ? 'قطعة' : 'units'}`;
+        else if (c.key === 'ratio') text = `${ratio}%`;
+        else if (c.key === 'subtotal') text = formatCurrency(it.subtotal, currency, lang);
+
+        if (isRtl) {
+          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
+          const cX = ctx.textAlign === 'right' ? rowX - 8 : rowX - c.width + 8;
+          ctx.fillText(text, cX, y + 26);
+          rowX -= c.width;
+        } else {
+          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
+          const cX = ctx.textAlign === 'left' ? rowX + 8 : rowX + c.width - 8;
+          ctx.fillText(text, cX, y + 26);
+          rowX += c.width;
+        }
+      }
+      ctx.restore();
+      y += 40;
+    }
+
+    // Summary Highlight Footer Row
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 42, 0, '#f0fdf4', '#86efac', 1.2);
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#166534';
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(
+      isRtl ? `إجمالي عدد القطع المباعة: ${totalUnitsSold} قطعة` : `Total Units Sold: ${totalUnitsSold} Units`,
+      isRtl ? WIDTH - PADDING - 14 : PADDING + 14,
+      y + 27
+    );
+    ctx.restore();
+    y += 54;
+  } else {
+    // Payment Receipt / Voucher
+    const payH = 110;
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, payH, 10, '#f8fafc', '#cbd5e1', 1.2);
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', WIDTH / 2, y + 36);
+
+    ctx.font = 'bold 36px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = transaction.type === 'PAYMENT_RECEIVED' ? '#047857' : '#b91c1c';
+    ctx.fillText(formatCurrency(transaction.paidAmount || transaction.totalAmount, currency, lang), WIDTH / 2, y + 80);
+    ctx.restore();
+    y += payH + 20;
+  }
+
+  // 4. Financial Totals Card
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 230, 10, '#f8fafc', '#cbd5e1', 1.2);
+  ctx.save();
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+  let tY = y + 34;
+
+  const drawPhoneTotalLine = (label: string, value: string, isBig = false, color = '#1e293b') => {
+    ctx.font = isBig
+      ? 'bold 24px Cairo, Tahoma, "Segoe UI", sans-serif'
+      : 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = color;
+
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    const lX = isRtl ? WIDTH - PADDING - 20 : PADDING + 20;
+    ctx.fillText(label, lX, tY);
+
+    ctx.textAlign = isRtl ? 'left' : 'right';
+    const vX = isRtl ? PADDING + 20 : WIDTH - PADDING - 20;
+    ctx.fillText(value, vX, tY);
+
+    tY += isBig ? 38 : 30;
+  };
+
+  const subtotal = transaction.subtotalBeforeTax ?? transaction.totalAmount;
+  drawPhoneTotalLine(isRtl ? 'المجموع قبل الضريبة:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+
+  if (transaction.discountAmount && transaction.discountAmount > 0) {
+    drawPhoneTotalLine(isRtl ? 'الخصم الممنوح:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+  }
+
+  if (isVatApplied && transaction.taxAmount && transaction.taxAmount > 0) {
+    drawPhoneTotalLine(`${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`, formatCurrency(transaction.taxAmount, currency, lang));
+  }
+
+  // Grand Total Line
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(PADDING + 16, tY - 14);
+  ctx.lineTo(WIDTH - PADDING - 16, tY - 14);
+  ctx.stroke();
+
+  drawPhoneTotalLine(isRtl ? 'الإجمالي النهائي:' : 'Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+
+  if (transaction.paidAmount > 0) {
+    drawPhoneTotalLine(isRtl ? 'المدفوع نقداً:' : 'Paid Amount:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
+  }
+
+  const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
+  if (remaining > 0) {
+    drawPhoneTotalLine(isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', formatCurrency(remaining, currency, lang), true, '#b91c1c');
+  }
+  ctx.restore();
+  y += 246;
+
+  // 5. ZATCA QR Code (Ultra clear)
+  if (qrImg) {
+    const qrSize = 160;
+    drawRoundedRect(ctx, (WIDTH - qrSize - 40) / 2, y, qrSize + 40, qrSize + 40, 10, '#ffffff', '#cbd5e1', 1.2);
+    ctx.drawImage(qrImg, (WIDTH - qrSize) / 2, y + 10, qrSize, qrSize);
+    y += qrSize + 54;
+    ctx.save();
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.textAlign = 'center';
+    ctx.fillText(isRtl ? 'رمز الفاتورة الإلكترونية المعتمد (ZATCA)' : 'ZATCA E-Invoice QR Code', WIDTH / 2, y);
+    ctx.restore();
+    y += 30;
+  }
+
+  // Footer notes & quotation terms
+  if (profile.invoiceFooterNote || transaction.quotationTerms) {
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    if (profile.invoiceFooterNote) {
+      ctx.fillText(profile.invoiceFooterNote, WIDTH / 2, y);
+      y += 24;
+    }
+    if (transaction.quotationTerms) {
+      ctx.fillText(`شروط العرض: ${transaction.quotationTerms}`, WIDTH / 2, y);
+      y += 24;
+    }
+    ctx.restore();
+  }
+
+  // System branding footer
+  ctx.save();
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#94a3b8';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    isRtl ? 'تم إصدار الوثيقة آلياً عبر نظام الدفتر الذكي (The Smart Dafter)' : 'Issued electronically via The Smart Dafter',
+    WIDTH / 2,
+    y + 20
+  );
+  ctx.restore();
+  y += 44;
+
+  const finalH = Math.max(500, y);
+  const heightMm = Math.round((finalH / WIDTH) * 100);
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: [100, Math.max(140, heightMm)],
+    compress: true,
+  });
+
+  const imgData = canvas.toDataURL('image/jpeg', 0.95);
+  doc.addImage(imgData, 'JPEG', 0, 0, 100, heightMm, undefined, 'FAST');
+  canvas.width = 0;
+  canvas.height = 0;
+
+  return doc;
+}
+
 export async function generateInvoicePdf(
   options: GenerateInvoicePdfOptions
 ): Promise<jsPDF> {
+  if (options.format === 'THERMAL_80MM') {
+    return generateThermal80mmInvoicePdf(options);
+  }
+  if (options.format === 'MOBILE_PHONE' || !options.format) {
+    return generateMobilePhoneInvoicePdf(options);
+  }
+
   const { profile, transaction, party, zatcaQrDataUrl, isVatApplied = false, lang = 'ar' } = options;
   const isRtl = lang === 'ar';
   const currency = profile.currency || 'SAR';
@@ -708,66 +1460,66 @@ export async function generateInvoicePdf(
   const { canvas, ctx } = createA4Canvas();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
 
-  let currentY = 60;
+  let currentY = 55;
 
-  // 1. Header Banner
+  // 1. Header Banner - Big high-legibility fonts for smartphones
   ctx.save();
   let textStartX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
 
   // Draw Logo if present
   if (logoImg) {
-    const logoSize = 80;
+    const logoSize = 88;
     const logoX = isRtl ? PAGE_WIDTH - MARGIN_X - logoSize : MARGIN_X;
     ctx.drawImage(logoImg, logoX, currentY, logoSize, logoSize);
     textStartX = isRtl ? PAGE_WIDTH - MARGIN_X - logoSize - 20 : MARGIN_X + logoSize + 20;
   }
 
-  // Business Name
-  ctx.font = 'bold 28px Cairo, Tahoma, "Segoe UI", sans-serif';
+  // Business Name (Enlarged for phone visibility)
+  ctx.font = 'bold 32px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = isRtl ? 'right' : 'left';
-  ctx.fillText(profile.name, textStartX, currentY + 30);
+  ctx.fillText(profile.name, textStartX, currentY + 34);
 
   // Business Subtitle & Tax Number
-  ctx.font = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#475569';
-  let bSubY = currentY + 54;
+  let bSubY = currentY + 62;
   if (profile.phone) {
     ctx.fillText(`${isRtl ? 'الهاتف: ' : 'Phone: '} ${profile.phone}`, textStartX, bSubY);
-    bSubY += 22;
+    bSubY += 24;
   }
   if (profile.taxNumber) {
     ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, textStartX, bSubY);
   }
 
   // Opposite side: Doc Title Badge & Reference
-  const badgeW = 240;
-  const badgeH = 46;
+  const badgeW = 250;
+  const badgeH = 50;
   const badgeX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - badgeW;
   const badgeFill = naming.color || '#0f172a';
   drawRoundedRect(ctx, badgeX, currentY, badgeW, badgeH, 8, badgeFill);
 
-  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
-  ctx.fillText(docTitle, badgeX + badgeW / 2, currentY + 29);
+  ctx.fillText(docTitle, badgeX + badgeW / 2, currentY + 32);
 
-  // Invoice Number & Date
-  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", monospace';
+  // Invoice Number & Date (Bolder & larger font)
+  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", monospace';
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = isRtl ? 'left' : 'right';
   const metaX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X;
-  ctx.fillText(`#${transaction.receiptNumber}`, metaX, currentY + 74);
+  ctx.fillText(`#${transaction.receiptNumber}`, metaX, currentY + 80);
 
-  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(formatDate(transaction.date, lang), metaX, currentY + 96);
+  ctx.fillText(formatDate(transaction.date, lang), metaX, currentY + 104);
   ctx.restore();
 
-  currentY += 125;
+  currentY += 135;
 
   // Divider line
-  ctx.strokeStyle = '#e2e8f0';
+  ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(MARGIN_X, currentY);
@@ -776,61 +1528,57 @@ export async function generateInvoicePdf(
 
   currentY += 20;
 
-  // 2. Party & Transaction Details Cards (2 columns)
+  // 2. Party & Transaction Details Cards
   const cardW = (CONTENT_WIDTH - 20) / 2;
-  const cardH = 100;
+  const cardH = 104;
 
   // Bill To / Supplier Card
   const partyCardX = isRtl ? PAGE_WIDTH - MARGIN_X - cardW : MARGIN_X;
-  drawRoundedRect(ctx, partyCardX, currentY, cardW, cardH, 10, '#f8fafc', '#cbd5e1', 1);
+  drawRoundedRect(ctx, partyCardX, currentY, cardW, cardH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
   ctx.textAlign = isRtl ? 'right' : 'left';
-  const pTextX = isRtl ? partyCardX + cardW - 18 : partyCardX + 18;
+  const pTextX = isRtl ? partyCardX + cardW - 20 : partyCardX + 20;
 
-  ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(
-    naming.recipientLabel,
-    pTextX,
-    currentY + 26
-  );
+  ctx.fillText(naming.recipientLabel, pTextX, currentY + 28);
 
-  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 22px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
-  ctx.fillText(party.name, pTextX, currentY + 52);
+  ctx.fillText(party.name, pTextX, currentY + 58);
 
-  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#475569';
-  ctx.fillText(party.phone || '-', pTextX, currentY + 76);
+  ctx.fillText(party.phone || '-', pTextX, currentY + 86);
   ctx.restore();
 
   // Invoice Details Card
   const metaCardX = isRtl ? MARGIN_X : MARGIN_X + cardW + 20;
-  drawRoundedRect(ctx, metaCardX, currentY, cardW, cardH, 10, '#f8fafc', '#cbd5e1', 1);
+  drawRoundedRect(ctx, metaCardX, currentY, cardW, cardH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
   ctx.textAlign = isRtl ? 'right' : 'left';
-  const mTextX = isRtl ? metaCardX + cardW - 18 : metaCardX + 18;
+  const mTextX = isRtl ? metaCardX + cardW - 20 : metaCardX + 20;
 
-  ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(isRtl ? 'تفاصيل العملية:' : 'TRANSACTION DETAILS:', mTextX, currentY + 26);
+  ctx.fillText(isRtl ? 'تفاصيل العملية:' : 'TRANSACTION DETAILS:', mTextX, currentY + 28);
 
-  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#334155';
   ctx.fillText(
     `${isRtl ? 'طريقة السداد: ' : 'Payment Method: '} ${transaction.paymentMethod || (isRtl ? 'آجل مسجل بالدفتر' : 'Credit / On-Account')}`,
     mTextX,
-    currentY + 52
+    currentY + 58
   );
 
   ctx.fillText(
     `${isRtl ? 'الحالة: ' : 'Status: '} ${transaction.isVoided ? (isRtl ? 'ملغاة' : 'VOIDED') : (isRtl ? 'معتمدة ومسجلة' : 'Confirmed')}`,
     mTextX,
-    currentY + 76
+    currentY + 86
   );
   ctx.restore();
 
@@ -838,55 +1586,58 @@ export async function generateInvoicePdf(
 
   // 3. Line Items Table (For Sale & Supply)
   const items = transaction.items || [];
+  const totalItemTypes = items.length;
+  const totalUnitsSold = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+
   if (items.length > 0) {
     const itemCols = [
       { key: 'index', width: 60, title: '#' },
-      { key: 'name', width: 500, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description' },
-      { key: 'qty', width: 160, title: isRtl ? 'الكمية' : 'Quantity' },
+      { key: 'name', width: 480, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description' },
+      { key: 'qty', width: 170, title: isRtl ? 'الكمية' : 'Quantity' },
       { key: 'price', width: 180, title: isRtl ? 'سعر الوحدة' : 'Unit Price' },
-      { key: 'total', width: 220, title: isRtl ? 'الإجمالي' : 'Total' },
+      { key: 'total', width: 230, title: isRtl ? 'الإجمالي' : 'Total' },
     ];
 
-    // Table Header
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 40, 6, '#1e293b');
+    // Table Header (Enlarged 16px font)
+    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 44, 6, '#1e293b');
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#ffffff';
 
     let hX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
     for (const col of itemCols) {
       if (isRtl) {
         ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'right' : 'left';
-        const cX = ctx.textAlign === 'right' ? hX - 12 : hX - col.width + 12;
-        ctx.fillText(col.title, cX, currentY + 25);
+        const cX = ctx.textAlign === 'right' ? hX - 14 : hX - col.width + 14;
+        ctx.fillText(col.title, cX, currentY + 28);
         hX -= col.width;
       } else {
         ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'left' : 'right';
-        const cX = ctx.textAlign === 'left' ? hX + 12 : hX + col.width - 12;
-        ctx.fillText(col.title, cX, currentY + 25);
+        const cX = ctx.textAlign === 'left' ? hX + 14 : hX + col.width - 14;
+        ctx.fillText(col.title, cX, currentY + 28);
         hX += col.width;
       }
     }
     ctx.restore();
-    currentY += 40;
+    currentY += 44;
 
-    // Table Rows
+    // Table Rows (Enhanced 16px font & 42px row height for instant phone readability)
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const rY = currentY;
 
       if (i % 2 === 1) {
         ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(MARGIN_X, rY, CONTENT_WIDTH, 36);
+        ctx.fillRect(MARGIN_X, rY, CONTENT_WIDTH, 42);
       }
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 1;
-      ctx.strokeRect(MARGIN_X, rY, CONTENT_WIDTH, 36);
+      ctx.strokeRect(MARGIN_X, rY, CONTENT_WIDTH, 42);
 
       ctx.save();
       ctx.direction = isRtl ? 'rtl' : 'ltr';
-      ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#1e293b';
 
       let rowX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
@@ -900,76 +1651,179 @@ export async function generateInvoicePdf(
 
         if (isRtl) {
           ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'right' : 'left';
-          const cX = ctx.textAlign === 'right' ? rowX - 12 : rowX - col.width + 12;
-          ctx.fillText(text, cX, rY + 23);
+          const cX = ctx.textAlign === 'right' ? rowX - 14 : rowX - col.width + 14;
+          ctx.fillText(text, cX, rY + 27);
           rowX -= col.width;
         } else {
           ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'left' : 'right';
-          const cX = ctx.textAlign === 'left' ? rowX + 12 : rowX + col.width - 12;
-          ctx.fillText(text, cX, rY + 23);
+          const cX = ctx.textAlign === 'left' ? rowX + 14 : rowX + col.width - 14;
+          ctx.fillText(text, cX, rY + 27);
           rowX += col.width;
         }
       }
       ctx.restore();
-      currentY += 36;
+      currentY += 42;
     }
+
+    // 3.5. Items Sold Summary Table (جدول ملخص الكميات والأصناف المباعة)
+    currentY += 16;
+
+    const sumHeaderH = 38;
+    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, sumHeaderH, 6, '#0f766e');
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    const sumHeaderTitle = isRtl
+      ? `📊 ملخص الأصناف والكميات المباعة (إجمالي: ${totalUnitsSold} قطعة / وحدة في ${totalItemTypes} أصناف)`
+      : `📊 Items Sold Summary (${totalUnitsSold} Units Sold across ${totalItemTypes} Varieties)`;
+    ctx.fillText(sumHeaderTitle, isRtl ? PAGE_WIDTH - MARGIN_X - 16 : MARGIN_X + 16, currentY + 24);
+    ctx.restore();
+    currentY += sumHeaderH;
+
+    // Summary Subtable Columns
+    const sumCols = [
+      { key: 'idx', width: 60, title: '#' },
+      { key: 'name', width: 440, title: isRtl ? 'اسم الصنف' : 'Item Name' },
+      { key: 'qty', width: 200, title: isRtl ? 'الكمية المباعة' : 'Units Sold' },
+      { key: 'ratio', width: 180, title: isRtl ? 'نسبة المبيعات' : '% Ratio' },
+      { key: 'subtotal', width: 240, title: isRtl ? 'القيمة الإجمالية' : 'Total Amount' },
+    ];
+    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 34, 0, '#f1f5f9', '#cbd5e1', 1);
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#334155';
+    let sColX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
+    for (const c of sumCols) {
+      if (isRtl) {
+        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
+        const scX = ctx.textAlign === 'right' ? sColX - 12 : sColX - c.width + 12;
+        ctx.fillText(c.title, scX, currentY + 22);
+        sColX -= c.width;
+      } else {
+        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
+        const scX = ctx.textAlign === 'left' ? sColX + 12 : sColX + c.width - 12;
+        ctx.fillText(c.title, scX, currentY + 22);
+        sColX += c.width;
+      }
+    }
+    ctx.restore();
+    currentY += 34;
+
+    // Summary Rows
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const rY = currentY;
+      const ratio = totalUnitsSold > 0 ? ((Number(it.quantity) / totalUnitsSold) * 100).toFixed(1) : '0';
+
+      ctx.fillStyle = i % 2 === 1 ? '#f8fafc' : '#ffffff';
+      ctx.fillRect(MARGIN_X, rY, CONTENT_WIDTH, 34);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(MARGIN_X, rY, CONTENT_WIDTH, 34);
+
+      ctx.save();
+      ctx.direction = isRtl ? 'rtl' : 'ltr';
+      ctx.font = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#1e293b';
+
+      let rowX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
+      for (const c of sumCols) {
+        let text = '';
+        if (c.key === 'idx') text = String(i + 1);
+        else if (c.key === 'name') text = fitText(ctx, it.name, c.width - 24);
+        else if (c.key === 'qty') text = `${it.quantity} ${isRtl ? 'قطعة' : 'units'}`;
+        else if (c.key === 'ratio') text = `${ratio}%`;
+        else if (c.key === 'subtotal') text = formatCurrency(it.subtotal, currency, lang);
+
+        if (isRtl) {
+          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
+          const cX = ctx.textAlign === 'right' ? rowX - 12 : rowX - c.width + 12;
+          ctx.fillText(text, cX, rY + 22);
+          rowX -= c.width;
+        } else {
+          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
+          const cX = ctx.textAlign === 'left' ? rowX + 12 : rowX + c.width - 12;
+          ctx.fillText(text, cX, rY + 22);
+          rowX += c.width;
+        }
+      }
+      ctx.restore();
+      currentY += 34;
+    }
+
+    // Summary Total Footer Row
+    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 36, 0, '#f0fdf4', '#86efac', 1.2);
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#166534';
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(
+      isRtl ? `إجمالي عدد القطع المباعة: ${totalUnitsSold} قطعة` : `Total Units Sold: ${totalUnitsSold} Units`,
+      isRtl ? PAGE_WIDTH - MARGIN_X - 16 : MARGIN_X + 16,
+      currentY + 24
+    );
+    ctx.restore();
+    currentY += 46;
   } else {
     // Payment Receipt / Voucher Highlight Box
-    const payH = 100;
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, payH, 10, '#f8fafc', '#cbd5e1', 1);
+    const payH = 110;
+    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, payH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = 'center';
 
-    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#64748b';
-    ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', PAGE_WIDTH / 2, currentY + 34);
+    ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', PAGE_WIDTH / 2, currentY + 38);
 
-    ctx.font = 'bold 32px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 36px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = transaction.type === 'PAYMENT_RECEIVED' ? '#047857' : '#b91c1c';
     ctx.fillText(
       formatCurrency(transaction.paidAmount || transaction.totalAmount, currency, lang),
       PAGE_WIDTH / 2,
-      currentY + 76
+      currentY + 84
     );
     ctx.restore();
 
     currentY += payH + 20;
   }
 
-  currentY += 20;
+  currentY += 15;
 
   // 4. Financial Summary Breakdown & ZATCA QR Code Block
-  const summaryBoxW = 480;
-  const qrBoxW = 320;
+  const summaryBoxW = 500;
+  const qrBoxW = 340;
   const sumY = currentY;
 
-  // Financial Breakdown Box
+  // Financial Breakdown Box (Enhanced typography)
   const sumBoxX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - summaryBoxW;
-  drawRoundedRect(ctx, sumBoxX, sumY, summaryBoxW, 210, 10, '#f8fafc', '#cbd5e1', 1);
+  drawRoundedRect(ctx, sumBoxX, sumY, summaryBoxW, 215, 10, '#f8fafc', '#cbd5e1', 1.2);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
-  let lineY = sumY + 30;
+  let lineY = sumY + 32;
 
   const drawSummaryLine = (label: string, value: string, isBold = false, color = '#1e293b') => {
     ctx.font = isBold
-      ? 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif'
-      : '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ? 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif'
+      : 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = color;
 
     // Label
     ctx.textAlign = isRtl ? 'right' : 'left';
-    const lX = isRtl ? sumBoxX + summaryBoxW - 20 : sumBoxX + 20;
+    const lX = isRtl ? sumBoxX + summaryBoxW - 22 : sumBoxX + 22;
     ctx.fillText(label, lX, lineY);
 
     // Value
     ctx.textAlign = isRtl ? 'left' : 'right';
-    const vX = isRtl ? sumBoxX + 20 : sumBoxX + summaryBoxW - 20;
+    const vX = isRtl ? sumBoxX + 22 : sumBoxX + summaryBoxW - 22;
     ctx.fillText(value, vX, lineY);
 
-    lineY += 28;
+    lineY += 30;
   };
 
   const subtotal = transaction.subtotalBeforeTax ?? transaction.totalAmount;
@@ -988,7 +1842,7 @@ export async function generateInvoicePdf(
 
   // Grand Total Divider
   ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(sumBoxX + 15, lineY - 14);
   ctx.lineTo(sumBoxX + summaryBoxW - 15, lineY - 14);
@@ -1008,42 +1862,42 @@ export async function generateInvoicePdf(
 
   // ZATCA QR Code Box (Opposite side)
   const qrBoxX = isRtl ? PAGE_WIDTH - MARGIN_X - qrBoxW : MARGIN_X;
-  drawRoundedRect(ctx, qrBoxX, sumY, qrBoxW, 210, 10, '#ffffff', '#cbd5e1', 1);
+  drawRoundedRect(ctx, qrBoxX, sumY, qrBoxW, 215, 10, '#ffffff', '#cbd5e1', 1.2);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
   ctx.textAlign = 'center';
 
   if (qrImg) {
-    const qrSize = 140;
+    const qrSize = 145;
     ctx.drawImage(qrImg, qrBoxX + (qrBoxW - qrSize) / 2, sumY + 18, qrSize, qrSize);
 
-    ctx.font = 'bold 11px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#475569';
     ctx.fillText(
       isRtl ? 'رمز الفوترة الإلكترونية (ZATCA)' : 'ZATCA E-Invoice QR Code',
       qrBoxX + qrBoxW / 2,
-      sumY + 185
+      sumY + 192
     );
   } else {
-    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#94a3b8';
     ctx.fillText(
       isRtl ? 'الدفتر الذكي' : 'The Smart Dafter',
       qrBoxX + qrBoxW / 2,
       sumY + 95
     );
-    ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillText(
       isRtl ? 'نظام الفوترة وإدارة الحسابات' : 'E-Invoicing & Ledger System',
       qrBoxX + qrBoxW / 2,
-      sumY + 120
+      sumY + 124
     );
   }
   ctx.restore();
 
   // 5. Bank Info & Footer Notes
-  currentY = sumY + 230;
+  currentY = sumY + 235;
 
   if (profile.iban || profile.invoiceFooterNote) {
     ctx.save();
@@ -1052,20 +1906,32 @@ export async function generateInvoicePdf(
     const noteX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
 
     if (profile.iban) {
-      ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#64748b';
+      ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#475569';
       ctx.fillText(
         `${isRtl ? 'الحساب البنكي: ' : 'Bank: '} ${profile.bankName || ''} | IBAN: ${profile.iban}`,
         noteX,
         currentY
       );
-      currentY += 20;
+      currentY += 22;
     }
 
     if (profile.invoiceFooterNote) {
-      ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#94a3b8';
+      ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#64748b';
       ctx.fillText(profile.invoiceFooterNote, noteX, currentY);
+      currentY += 20;
+    }
+
+    if (transaction.type === 'QUOTATION') {
+      const qValidity = transaction.quotationValidityDays || 15;
+      const qTermsText = transaction.quotationTerms
+        ? (isRtl ? `شروط العرض: ${transaction.quotationTerms} | مدة السريان: ${qValidity} يوماً` : `Terms: ${transaction.quotationTerms} | Validity: ${qValidity} days`)
+        : (isRtl ? `مدة سريان عرض السعر: ${qValidity} يوماً من تاريخ الإصدار` : `Quote Validity Period: ${qValidity} days from issue date`);
+
+      ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#4338ca';
+      ctx.fillText(qTermsText, noteX, currentY);
     }
     ctx.restore();
   }
@@ -1114,31 +1980,38 @@ export async function shareOrDownloadPdf(
       typeof navigator.share === 'function';
 
     if (canShare) {
+      let shareFailed = false;
+      let userAborted = false;
       try {
         // Hand off to OS share sheet.
         // WebKit on iOS and some Android WebViews fail to settle the navigator.share promise when returning from external apps like WhatsApp.
-        // We race with a fast 1500ms timeout so the JavaScript event loop never blocks or deadlocks waiting for OS completion.
+        // We race with a fast 2000ms timeout so the JavaScript event loop never blocks or deadlocks waiting for OS completion.
         const sharePromise = navigator.share({
           title,
           text: title,
           files: [file],
         }).catch((err) => {
-          if (err?.name !== 'AbortError') {
+          if (err?.name === 'AbortError') {
+            userAborted = true;
+          } else {
+            shareFailed = true;
             console.warn('Native share dismissed or deferred error:', err);
           }
         });
 
         await Promise.race([
           sharePromise,
-          new Promise((resolve) => setTimeout(resolve, 1500)),
+          new Promise((resolve) => setTimeout(resolve, 2000)),
         ]);
-        return { success: true, blob, method: 'native_share' };
+
+        if (userAborted || !shareFailed) {
+          return { success: true, blob, method: 'native_share' };
+        }
       } catch (err: any) {
         if (err?.name === 'AbortError') {
           return { success: true, blob, method: 'native_share' };
         }
         console.warn('Native share dismissed or resumed with notice:', err);
-        return { success: true, blob, method: 'native_share' };
       }
     }
 

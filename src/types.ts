@@ -64,9 +64,12 @@ export interface Transaction {
   voidedAt?: string;
   voidReason?: string;
   supplierInvoiceAttachment?: string; // صورة أو سند فاتورة المورد (Base64/DataURL)
-  originalTransactionId?: string; // المعرف المرجعي للفاتورة الأصلية في حالة الإشعار الدائن
   isQuotationConverted?: boolean; // تم تحويل عرض السعر إلى فاتورة
   convertedTransactionId?: string;
+  quotationValidityDays?: number; // مدة سريان عرض السعر بالأيام (e.g., 7, 15, 30 days)
+  quotationTerms?: string; // الشروط والأحكام الخاصة بعرض السعر (Terms and conditions)
+  updatedAt?: string; // تاريخ آخر تعديل على الفاتورة
+  isModified?: boolean; // هل تم تعديل الفاتورة بعد إنشائها
 }
 
 export interface DailyClosingSession {
@@ -119,3 +122,25 @@ export interface LedgerEntry {
 
 export type ActiveTab = 'dashboard' | 'parties' | 'products' | 'settings';
 export type Language = 'ar' | 'en';
+
+export interface CloudSyncConfig {
+  enabled: boolean;
+  syncKey: string; // Encryption / identification key for syncing across devices
+  remoteEndpoint?: string; // Optional custom backup webhook / cloud endpoint
+  autoSyncOnChanges: boolean;
+  dailyScheduledSync: boolean;
+  lastSyncTimestamp?: string;
+  lastSyncStatus?: 'SUCCESS' | 'ERROR' | 'SYNCING' | 'IDLE';
+  lastSyncMessage?: string;
+  lastBackupHash?: string;
+}
+
+export interface CloudSyncStatus {
+  isConfigured: boolean;
+  isSyncing: boolean;
+  lastSyncTimestamp?: string;
+  lastSyncStatus: 'SUCCESS' | 'ERROR' | 'SYNCING' | 'IDLE';
+  lastSyncMessage?: string;
+  pendingChangesCount: number;
+  syncKey: string;
+}

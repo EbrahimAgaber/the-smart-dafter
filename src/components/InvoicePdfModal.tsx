@@ -17,11 +17,12 @@ import {
   ShieldCheck,
   AlertCircle,
   RefreshCw,
+  Edit2,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { BusinessProfile, Language, Party, Transaction } from '../types';
 import { getTranslation } from '../i18n/translations';
-import { formatCurrency, formatDate, sanitizePhoneNumber, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
+import { formatCurrency, formatDate, sanitizePhoneNumber, formatLocalPhoneInput, buildWhatsAppMessage, openExternalUrl } from '../utils/formatters';
 import type { jsPDF } from 'jspdf';
 import { generateInvoicePdf, shareOrDownloadPdf } from '../utils/pdfGenerator';
 import { generateZatcaTlvQrString } from '../utils/zatca';
@@ -37,6 +38,7 @@ interface InvoicePdfModalProps {
   onClose: () => void;
   onVoidTransaction?: (txId: string) => void;
   onConvertToInvoice?: (quotationTx: Transaction) => void;
+  onEditInvoice?: (tx: Transaction) => void;
 }
 
 export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
@@ -47,6 +49,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   onClose,
   onVoidTransaction,
   onConvertToInvoice,
+  onEditInvoice,
 }) => {
   const t = getTranslation(lang);
   const currency = profile.currency || 'SAR';
@@ -62,8 +65,8 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
   const [integrityError, setIntegrityError] = useState<string | null>(null);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [whatsAppNotice, setWhatsAppNotice] = useState<{ text: string; fileName?: string } | null>(null);
-  const [recipientPhone, setRecipientPhone] = useState<string>(party.phone || '');
-  const [printFormat, setPrintFormat] = useState<'A4' | 'THERMAL_80MM'>('A4');
+  const [recipientPhone, setRecipientPhone] = useState<string>(() => formatLocalPhoneInput(party.phone || ''));
+  const [pdfFormat, setPdfFormat] = useState<'MOBILE_PHONE' | 'A4' | 'THERMAL_80MM'>('MOBILE_PHONE');
 
   const isSale = transaction.type === 'SALE_CREDIT';
   const isSupply = transaction.type === 'SUPPLY_CREDIT';
@@ -97,6 +100,42 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   }, [profile, transaction, party, isVatApplied]);
 
+  // Check if invoice can be modified (strictly allowed within 5 days of issuance and not voided)
+  const modificationStatus = useMemo(() => {
+    if (!transaction) return { allowed: false, reason: 'الفاتورة غير موجودة' };
+    if (transaction.isVoided) {
+      return {
+        allowed: false,
+        reason: isRtl ? 'لا يمكن تعديل فاتورة ملغاة ومبطلة' : 'Cannot edit a voided invoice',
+      };
+    }
+    const txTime = new Date(transaction.date).getTime();
+    if (isNaN(txTime)) {
+      return { allowed: false, reason: isRtl ? 'تاريخ الفاتورة غير صالح' : 'Invalid invoice date' };
+    }
+    const now = Date.now();
+    const elapsedMs = now - txTime;
+    const maxMs = 5 * 24 * 60 * 60 * 1000; // 5 days (120 hours)
+    if (elapsedMs > maxMs) {
+      return {
+        allowed: false,
+        reason: isRtl
+          ? 'انتهت مهلة التعديل (مسموح بتعديل الفاتورة خلال 5 أيام فقط من تاريخ إصدارها)'
+          : 'Modification period expired (allowed for 5 days after issuance only)',
+        remainingDays: 0,
+        remainingHours: 0,
+      };
+    }
+    const remainingMs = Math.max(0, maxMs - elapsedMs);
+    const remainingHours = Math.floor(remainingMs / (1000 * 60 * 60));
+    const remainingDays = Math.ceil(remainingHours / 24);
+    return {
+      allowed: true,
+      remainingDays,
+      remainingHours,
+    };
+  }, [transaction, isRtl]);
+
   // Automated File Integrity Checker: validates presence, structure, header (%PDF-), and local memory cache
   const runAutomatedIntegrityCheck = async (providedBlob?: Blob): Promise<{ success: boolean; blob: Blob | null; result?: PdfIntegrityResult }> => {
     setIntegrityStatus('checking');
@@ -111,6 +150,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
           zatcaQrDataUrl: zatcaQrUrl || undefined,
           isVatApplied,
           lang,
+          format: pdfFormat,
         });
         targetBlob = doc.output('blob');
       }
@@ -139,7 +179,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     }
   };
 
-  // Precompute PDF Blob and automatically verify file integrity once mounted
+  // Precompute PDF Blob and automatically verify file integrity once mounted or format toggled
   useEffect(() => {
     let mounted = true;
     let activeUrl: string | null = null;
@@ -155,6 +195,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
           zatcaQrDataUrl: zatcaQrUrl || undefined,
           isVatApplied,
           lang,
+          format: pdfFormat,
         });
         if (mounted) {
           const blob = doc.output('blob');
@@ -186,7 +227,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
         URL.revokeObjectURL(activeUrl);
       }
     };
-  }, [profile, transaction, party, zatcaQrUrl, isVatApplied, lang]);
+  }, [profile, transaction, party, zatcaQrUrl, isVatApplied, lang, pdfFormat]);
 
   // Automated Gate: verifies existence of cached invoice Blob before allowing any share
   const ensureVerifiedPdfBlob = async (): Promise<Blob | null> => {
@@ -219,6 +260,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
           zatcaQrDataUrl: zatcaQrUrl || undefined,
           isVatApplied,
           lang,
+          format: pdfFormat,
         });
         doc.save(pdfFileName);
       }
@@ -463,15 +505,35 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
               </button>
             )}
 
-            {/* Print Format Toggle: Standard A4 vs 80mm Thermal */}
-            <button
-              type="button"
-              onClick={() => setPrintFormat(printFormat === 'A4' ? 'THERMAL_80MM' : 'A4')}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold border border-slate-300/60 shadow-2xs transition-colors flex items-center gap-1"
-              title={isRtl ? 'تبديل التنسيق: A4 أو طابعة إيصالات 80 مم' : 'Toggle A4 or 80mm Thermal layout'}
-            >
-              <span>{printFormat === 'A4' ? '📄 A4' : '🧾 80mm'}</span>
-            </button>
+            {/* Edit Invoice Button (within 5-day grace period) */}
+            {onEditInvoice && !isReceipt && !isPayment && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (modificationStatus.allowed) {
+                    onEditInvoice(transaction);
+                  } else {
+                    alert(modificationStatus.reason);
+                  }
+                }}
+                title={modificationStatus.allowed
+                  ? `${t.editInvoice} (${isRtl ? `متبقي ${modificationStatus.remainingDays} أيام` : `${modificationStatus.remainingDays} days remaining`})`
+                  : modificationStatus.reason}
+                className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                  modificationStatus.allowed
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-900/10 active:scale-95'
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                }`}
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>{t.editInvoice}</span>
+                {modificationStatus.allowed && modificationStatus.remainingDays !== undefined && (
+                  <span className="bg-amber-600/70 text-white text-[10px] px-1.5 py-0.2 rounded-md font-mono">
+                    {modificationStatus.remainingDays} {isRtl ? 'ي' : 'd'}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* Share PDF File (iOS Share Sheet / Native Web Share) */}
             <button
@@ -516,13 +578,63 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
           </div>
         </div>
 
+        {/* Format Selector Bar for Phone, A4, and Thermal 80mm */}
+        <div className="flex items-center justify-between gap-2 p-2.5 bg-slate-100/90 rounded-2xl border border-slate-200 text-xs shrink-0 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-slate-800 px-1">
+              {isRtl ? 'تنسيق وحجم ملف الـ PDF:' : 'PDF File Format:'}
+            </span>
+            <span className="text-[11px] text-slate-500 hidden sm:inline">
+              {isRtl ? '(اختر قياس الهاتف لقراءة الخط بوضوح تام دون تكبير)' : '(Select phone format for large legible text)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setPdfFormat('MOBILE_PHONE')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 text-xs ${
+                pdfFormat === 'MOBILE_PHONE'
+                  ? 'bg-cyan-700 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+              }`}
+            >
+              <span>📱</span>
+              <span>{isRtl ? 'مخصص للهاتف (خط كبير بدون تكبير)' : 'Mobile Phone (Large)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPdfFormat('A4')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 text-xs ${
+                pdfFormat === 'A4'
+                  ? 'bg-cyan-700 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+              }`}
+            >
+              <span>📄</span>
+              <span>{isRtl ? 'ورق رسمي A4' : 'A4 Sheet'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPdfFormat('THERMAL_80MM')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 text-xs ${
+                pdfFormat === 'THERMAL_80MM'
+                  ? 'bg-cyan-700 text-white shadow-xs'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200'
+              }`}
+            >
+              <span>🧾</span>
+              <span>{isRtl ? 'حراري 80mm' : 'Thermal 80mm'}</span>
+            </button>
+          </div>
+        </div>
+
         {/* Scrollable Printable Document Container */}
         <div className="flex-1 overflow-y-auto p-1 scroll-smooth print:overflow-visible print:p-0">
           {/* High quality clean paper canvas layout for printing/PDF */}
           <div
             id="invoice-render-target"
             dir={isRtl ? 'rtl' : 'ltr'}
-            className="bg-white text-stone-900 p-6 md:p-8 rounded-2xl shadow-xl space-y-6 font-sans border border-stone-200 text-xs"
+            className="bg-white text-stone-900 p-6 md:p-8 rounded-2xl shadow-xl space-y-6 font-sans border border-stone-200 text-sm sm:text-base"
             style={{
               fontFamily: isRtl ? 'var(--font-cairo), sans-serif' : 'var(--font-tajawal), sans-serif',
             }}
@@ -543,17 +655,17 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                     </div>
                   )}
                   <div>
-                    <h2 className="text-base font-black text-stone-900">
+                    <h2 className="text-base sm:text-lg font-black text-stone-900">
                       {profile.name}
                     </h2>
-                    <p className="text-xs text-stone-600">
+                    <p className="text-xs sm:text-sm text-stone-600">
                       {profile.phone}
                     </p>
                   </div>
                 </div>
 
                 {profile.taxNumber && (
-                  <div className="text-xs text-stone-600 mt-1">
+                  <div className="text-xs sm:text-sm text-stone-600 mt-1">
                     <span>{t.taxNumber}: </span>
                     <span className="font-mono font-bold">{profile.taxNumber}</span>
                   </div>
@@ -568,13 +680,13 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                   </div>
                 )}
                 <div className="text-end space-y-0.5">
-                  <span className={`inline-block px-2.5 py-1 rounded-md ${docNaming.badgeBg} ${docNaming.badgeText} font-bold text-xs border ${docNaming.badgeBorder}`}>
+                  <span className={`inline-block px-2.5 py-1 rounded-md ${docNaming.badgeBg} ${docNaming.badgeText} font-bold text-xs sm:text-sm border ${docNaming.badgeBorder}`}>
                     {docTitle}
                   </span>
-                  <div className="font-mono font-black text-sm text-stone-900 mt-1">
+                  <div className="font-mono font-black text-sm sm:text-base text-stone-900 mt-1">
                     #{transaction.receiptNumber}
                   </div>
-                  <div className="text-xs text-stone-500">
+                  <div className="text-xs sm:text-sm text-stone-500">
                     {formatDate(transaction.date, lang)}
                   </div>
                 </div>
@@ -587,11 +699,11 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                 <span className="text-xs uppercase font-bold text-stone-500 block">
                   {docNaming.recipientLabel}
                 </span>
-                <div className="text-xs font-black text-stone-900 mt-0.5">
+                <div className="text-sm sm:text-base font-black text-stone-900 mt-0.5">
                   {party.name}
                 </div>
                 {party.phone && (
-                  <div className="text-xs text-stone-600 font-mono">
+                  <div className="text-xs sm:text-sm text-stone-600 font-mono">
                     {party.phone}
                   </div>
                 )}
@@ -606,7 +718,7 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                 <span className="text-xs uppercase font-bold text-stone-500 block">
                   {t.currentBalance}
                 </span>
-                <div className="text-sm font-black font-mono text-stone-900 mt-0.5">
+                <div className="text-base sm:text-lg font-black font-mono text-stone-900 mt-0.5">
                   {formatCurrency(party.currentBalance, currency, lang)}
                 </div>
                 <span className="text-xs text-stone-500">
@@ -619,33 +731,92 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
 
             {/* Line Items Table (if any) */}
             {transaction.items && transaction.items.length > 0 && (
-              <div className="space-y-2">
-                <table className="w-full text-start border-collapse">
-                  <thead>
-                    <tr className="border-b-2 border-stone-300 text-stone-600 text-xs">
-                      <th className="py-2 text-start font-bold">#</th>
-                      <th className="py-2 text-start font-bold">{t.itemName}</th>
-                      <th className="py-2 text-center font-bold">{t.quantity}</th>
-                      <th className="py-2 text-end font-bold">{t.unitPrice}</th>
-                      <th className="py-2 text-end font-bold">{t.subtotal}</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-200 text-stone-800">
-                    {transaction.items.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="py-2 text-stone-400 font-mono">{idx + 1}</td>
-                        <td className="py-2 font-semibold text-stone-900">{item.name}</td>
-                        <td className="py-2 text-center font-mono">{item.quantity}</td>
-                        <td className="py-2 text-end font-mono">
-                          {formatCurrency(item.unitPrice, currency, lang)}
-                        </td>
-                        <td className="py-2 text-end font-mono font-bold text-stone-900">
-                          {formatCurrency(item.subtotal, currency, lang)}
-                        </td>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <table className="w-full text-start border-collapse text-xs sm:text-sm">
+                    <thead>
+                      <tr className="border-b-2 border-stone-300 text-stone-600">
+                        <th className="py-2.5 text-start font-bold">#</th>
+                        <th className="py-2.5 text-start font-bold">{t.itemName}</th>
+                        <th className="py-2.5 text-center font-bold">{t.quantity}</th>
+                        <th className="py-2.5 text-end font-bold">{t.unitPrice}</th>
+                        <th className="py-2.5 text-end font-bold">{t.subtotal}</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-stone-200 text-stone-800">
+                      {transaction.items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="py-2.5 text-stone-400 font-mono">{idx + 1}</td>
+                          <td className="py-2.5 font-semibold text-stone-900">{item.name}</td>
+                          <td className="py-2.5 text-center font-mono font-bold">{item.quantity}</td>
+                          <td className="py-2.5 text-end font-mono">
+                            {formatCurrency(item.unitPrice, currency, lang)}
+                          </td>
+                          <td className="py-2.5 text-end font-mono font-bold text-stone-900">
+                            {formatCurrency(item.subtotal, currency, lang)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Items Sold Summary Table (جدول ملخص الكميات والأصناف المباعة) */}
+                <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs">📊</span>
+                      <span className="font-bold text-sm text-emerald-950">
+                        {isRtl ? 'ملخص الأصناف والكميات المباعة' : 'Items Sold Summary'}
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold font-mono text-xs border border-emerald-200">
+                      {transaction.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} {isRtl ? 'قطعة مباعة' : 'Units Sold'}
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-start border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-emerald-200 text-emerald-800">
+                          <th className="py-2 text-start font-bold">#</th>
+                          <th className="py-2 text-start font-bold">{isRtl ? 'اسم الصنف' : 'Item Name'}</th>
+                          <th className="py-2 text-center font-bold">{isRtl ? 'الكمية المباعة' : 'Units Sold'}</th>
+                          <th className="py-2 text-center font-bold">{isRtl ? 'نسبة المبيعات' : '% Ratio'}</th>
+                          <th className="py-2 text-end font-bold">{isRtl ? 'القيمة الإجمالية' : 'Total'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-emerald-100 text-stone-800">
+                        {(() => {
+                          const totalUnits = transaction.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+                          return transaction.items.map((item, idx) => {
+                            const ratio = totalUnits > 0 ? ((Number(item.quantity) / totalUnits) * 100).toFixed(0) : '0';
+                            return (
+                              <tr key={idx} className="hover:bg-emerald-50/50">
+                                <td className="py-2 font-mono text-stone-400">{idx + 1}</td>
+                                <td className="py-2 font-semibold text-stone-900">{item.name}</td>
+                                <td className="py-2 text-center font-mono font-bold text-emerald-700">
+                                  {item.quantity} {isRtl ? 'قطعة' : 'units'}
+                                </td>
+                                <td className="py-2 text-center font-mono text-stone-600">{ratio}%</td>
+                                <td className="py-2 text-end font-mono font-bold text-stone-900">
+                                  {formatCurrency(item.subtotal, currency, lang)}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs font-bold text-emerald-900">
+                    <span>{isRtl ? 'إجمالي عدد القطع المباعة في الفاتورة:' : 'Total Units Sold:'}</span>
+                    <span className="font-mono text-sm text-emerald-800">
+                      {transaction.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} {isRtl ? 'قطعة' : 'Units'}
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -684,8 +855,24 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
               </div>
 
               {isQuotation ? (
-                <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-semibold">
-                  <span>{isRtl ? 'عرض سعر تقديري - لا يترتب عليه أي التزام مالي حالي حتى اعتماده' : 'Draft estimate - No current financial obligation until approved'}</span>
+                <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 text-xs space-y-1.5">
+                  <div className="flex items-center justify-between font-bold">
+                    <span>{isRtl ? '⏱️ مدة سريان العرض:' : '⏱️ Validity Period:'}</span>
+                    <span className="font-mono text-indigo-700 bg-white px-2 py-0.5 rounded-md border border-indigo-200">
+                      {transaction.quotationValidityDays || 15} {isRtl ? 'يوم' : 'Days'}
+                    </span>
+                  </div>
+                  {transaction.quotationTerms && (
+                    <div className="pt-1 border-t border-indigo-200/60 text-[11px] text-indigo-900">
+                      <span className="font-bold">{isRtl ? '📜 الشروط والأحكام: ' : '📜 Terms: '}</span>
+                      <span>{transaction.quotationTerms}</span>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-indigo-700 pt-0.5">
+                    {isRtl
+                      ? 'عرض سعر تقديري - لا يترتب عليه أي التزام مالي حالي حتى اعتماده وتحويله لفاتورة مبيعات'
+                      : 'Draft estimate - No current financial obligation until approved and converted to invoice'}
+                  </p>
                 </div>
               ) : isReturn ? (
                 <>
@@ -973,6 +1160,35 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
         {/* Bottom Fast Action Bar */}
         <div className="border-t border-slate-200 pt-3 flex items-center justify-between gap-2 text-xs shrink-0 flex-wrap">
           <div className="flex items-center gap-1.5 flex-wrap">
+            {onEditInvoice && !isReceipt && !isPayment && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (modificationStatus.allowed) {
+                    onEditInvoice(transaction);
+                  } else {
+                    alert(modificationStatus.reason);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-bold border transition-colors min-h-[40px] ${
+                  modificationStatus.allowed
+                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-2xs'
+                    : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                }`}
+                title={modificationStatus.allowed
+                  ? `${t.editInvoice} (${isRtl ? `متبقي ${modificationStatus.remainingDays} أيام` : `${modificationStatus.remainingDays} days remaining`})`
+                  : modificationStatus.reason}
+              >
+                <Edit2 className="w-3.5 h-3.5 text-amber-600" />
+                <span>{t.editInvoice}</span>
+                {modificationStatus.allowed && modificationStatus.remainingDays !== undefined && (
+                  <span className="bg-amber-200 text-amber-800 text-[10px] px-1.5 py-0.2 rounded-md font-mono">
+                    {modificationStatus.remainingDays} {isRtl ? 'ي' : 'd'}
+                  </span>
+                )}
+              </button>
+            )}
+
             <button
               onClick={handleCopyText}
               className="flex items-center gap-1 px-3 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300/60 shadow-2xs transition-colors min-h-[40px]"

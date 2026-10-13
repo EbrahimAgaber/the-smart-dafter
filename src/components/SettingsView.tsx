@@ -29,13 +29,19 @@ import {
   HardDrive,
   CheckCircle2,
   AlertTriangle,
+  Cloud,
+  CloudCheck,
+  CloudOff,
+  CloudUpload,
+  CloudDownload,
 } from 'lucide-react';
-import { BusinessProfile, Language } from '../types';
+import { BusinessProfile, Language, CloudSyncStatus } from '../types';
 import { getTranslation } from '../i18n/translations';
 import { compressImageFile } from '../utils/imageCompressor';
 import { getLicenseStatus } from '../utils/licenseManager';
 import { openExternalUrl } from '../utils/formatters';
 import { SQLiteLedgerStore, StorageHealthStatus, StorageDiagnosticResult } from '../db/sqliteStorage';
+import { cloudSyncManager } from '../db/cloudSyncManager';
 
 interface SettingsViewProps {
   profile: BusinessProfile;
@@ -118,6 +124,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setStorageHealth(updated);
     } finally {
       setIsRetryingSync(false);
+    }
+  };
+
+  // Cloud Sync state & hooks
+  const [cloudSyncConfig, setCloudSyncConfig] = useState(cloudSyncManager.getConfig());
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>(cloudSyncManager.getStatus());
+  const [targetSyncKeyInput, setTargetSyncKeyInput] = useState('');
+  const [cloudSyncFeedback, setCloudSyncFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = cloudSyncManager.subscribe((status) => {
+      setCloudSyncStatus(status);
+      setCloudSyncConfig(cloudSyncManager.getConfig());
+    });
+    return unsub;
+  }, []);
+
+  const handleToggleCloudSync = (enabled: boolean) => {
+    cloudSyncManager.saveConfig({ enabled });
+  };
+
+  const handleManualCloudSync = async () => {
+    setCloudSyncFeedback(null);
+    const res = await cloudSyncManager.syncNow('MANUAL');
+    setCloudSyncFeedback(res.message);
+    setTimeout(() => setCloudSyncFeedback(null), 4000);
+  };
+
+  const handlePullCloudBackup = async () => {
+    const keyToUse = targetSyncKeyInput.trim() || cloudSyncConfig.syncKey;
+    if (!keyToUse) return;
+
+    if (window.confirm(isRtl ? `هل أنت متأكد من استرجاع ومزامنة البيانات السحابية للمفتاح "${keyToUse}"؟` : `Are you sure you want to restore and sync from cloud key "${keyToUse}"?`)) {
+      setCloudSyncFeedback(null);
+      const res = await cloudSyncManager.pullAndRestore(keyToUse);
+      setCloudSyncFeedback(res.message);
+      setTimeout(() => setCloudSyncFeedback(null), 5000);
+    }
+  };
+
+  const handleRegenerateSyncKey = () => {
+    if (window.confirm(isRtl ? 'هل ترغب في إنشاء مفتاح مزامنة جديد؟' : 'Generate a new private sync key?')) {
+      const newKey = cloudSyncManager.generateNewSyncKey();
+      cloudSyncManager.saveConfig({ syncKey: newKey });
     }
   };
 
@@ -774,6 +824,157 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Automated Cloud Sync & Backup Card */}
+      <div id="settings-cloud-sync-card" className="p-4 bg-white rounded-3xl border border-slate-200 space-y-3.5 shadow-2xs">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-2.5">
+          <div className="flex items-center gap-2 text-slate-800 font-bold text-xs">
+            <Cloud className="w-4 h-4 text-cyan-600" />
+            <span>{t.cloudSyncTitle}</span>
+          </div>
+
+          <span
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 shadow-2xs ${
+              cloudSyncStatus.lastSyncStatus === 'SUCCESS'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : cloudSyncStatus.lastSyncStatus === 'SYNCING'
+                ? 'bg-cyan-50 text-cyan-700 border-cyan-200'
+                : cloudSyncStatus.lastSyncStatus === 'ERROR'
+                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                : 'bg-slate-50 text-slate-600 border-slate-200'
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                cloudSyncStatus.lastSyncStatus === 'SYNCING'
+                  ? 'bg-cyan-500 animate-ping'
+                  : cloudSyncStatus.lastSyncStatus === 'SUCCESS'
+                  ? 'bg-emerald-500'
+                  : cloudSyncStatus.lastSyncStatus === 'ERROR'
+                  ? 'bg-rose-500'
+                  : 'bg-slate-400'
+              }`}
+            />
+            <span>
+              {cloudSyncStatus.lastSyncStatus === 'SYNCING'
+                ? t.cloudSyncInProgress
+                : cloudSyncStatus.lastSyncStatus === 'SUCCESS'
+                ? t.cloudSyncHealthy
+                : cloudSyncStatus.lastSyncStatus === 'ERROR'
+                ? t.storageError
+                : (isRtl ? 'غير مفعل' : 'Idle')}
+            </span>
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-500 leading-relaxed">
+          {t.cloudSyncDesc}
+        </p>
+
+        {/* Master Toggle */}
+        <label className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100/60 transition-colors">
+          <div>
+            <span className="font-bold text-slate-800 text-xs block">
+              {t.enableCloudSync}
+            </span>
+            <span className="text-[11px] text-slate-400 block mt-0.5">
+              {isRtl ? 'حفظ تلقائي عند التعديل + نسخة يومية' : 'Sync on changes + 24h daily snapshots'}
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={cloudSyncConfig.enabled}
+            onChange={(e) => handleToggleCloudSync(e.target.checked)}
+            className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300"
+          />
+        </label>
+
+        {/* Sync Key Display & Cross-Device Controls */}
+        <div className="p-3 bg-cyan-50/60 rounded-2xl border border-cyan-200/80 space-y-2.5 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-cyan-950 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-cyan-600" />
+              <span>{t.syncKeyLabel}:</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleRegenerateSyncKey}
+              className="text-[10px] text-cyan-700 hover:text-cyan-900 font-bold underline"
+            >
+              {t.generateNewKey}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex-1 bg-white border border-cyan-200 rounded-xl px-3 py-1.5 font-mono font-bold text-center text-cyan-900 text-xs tracking-wider shadow-2xs">
+              {cloudSyncConfig.syncKey}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard?.writeText(cloudSyncConfig.syncKey);
+                alert(isRtl ? 'تم نسخ مفتاح المزامنة!' : 'Sync key copied to clipboard!');
+              }}
+              className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-cyan-100 text-cyan-800 border border-cyan-200 font-bold text-xs shadow-2xs"
+              title={isRtl ? 'نسخ المفتاح' : 'Copy Key'}
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-[10px] text-cyan-800/80 leading-relaxed">
+            {t.syncKeyDesc}
+          </p>
+        </div>
+
+        {/* Sync Trigger Actions */}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <button
+            type="button"
+            onClick={handleManualCloudSync}
+            disabled={cloudSyncStatus.isSyncing}
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition-all shadow-2xs disabled:opacity-75"
+          >
+            <CloudUpload className="w-3.5 h-3.5" />
+            <span>{cloudSyncStatus.isSyncing ? (isRtl ? 'جاري الرفع...' : 'Syncing...') : t.syncNowButton}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePullCloudBackup}
+            disabled={cloudSyncStatus.isSyncing}
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200 transition-colors shadow-2xs disabled:opacity-75"
+          >
+            <CloudDownload className="w-3.5 h-3.5 text-cyan-600" />
+            <span>{t.restoreFromCloud}</span>
+          </button>
+        </div>
+
+        {/* Restore from Another Device Key Input */}
+        <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+          <input
+            type="text"
+            value={targetSyncKeyInput}
+            onChange={(e) => setTargetSyncKeyInput(e.target.value.toUpperCase())}
+            placeholder={isRtl ? 'مفتاح جهاز آخر لاسترجاع بياناته (DS-XXXX-XXXX)...' : 'Other device sync key (DS-XXXX-XXXX)...'}
+            className="flex-1 bg-slate-50 text-slate-900 font-mono text-xs rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs"
+          />
+          <button
+            type="button"
+            onClick={handlePullCloudBackup}
+            disabled={!targetSyncKeyInput.trim() || cloudSyncStatus.isSyncing}
+            className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-800 font-bold text-xs border border-slate-200 shrink-0"
+          >
+            {isRtl ? 'استيراد' : 'Import'}
+          </button>
+        </div>
+
+        {/* Feedback alert */}
+        {cloudSyncFeedback && (
+          <div className="p-2.5 bg-cyan-50 rounded-xl border border-cyan-200 text-cyan-900 text-xs font-medium animate-fade-in">
+            ℹ️ {cloudSyncFeedback}
+          </div>
+        )}
       </div>
 
       {/* Database & Local SQLite Backup */}
