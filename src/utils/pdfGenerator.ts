@@ -32,23 +32,22 @@ export interface GenerateStatementPdfOptions {
 }
 
 // ============================================================================
-// Canvas-based High-DPI A4 PDF Rendering Engine (Native Vector & Canvas Engine)
+// Core Vector & Canvas Engine Helpers
 // ============================================================================
 
-const PAGE_WIDTH = 1240;  // A4 @ ~150 DPI
-const PAGE_HEIGHT = 1754;
-const MARGIN_X = 60;
-const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2; // 1120px
-const BOTTOM_LIMIT = 1640;
+const A4_WIDTH = 1240;  // A4 @ ~150 DPI
+const A4_HEIGHT = 1754;
+const A4_MARGIN_X = 60;
+const A4_CONTENT_WIDTH = A4_WIDTH - A4_MARGIN_X * 2; // 1120px
+const A4_BOTTOM_LIMIT = 1640;
 
 function createA4Canvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas');
-  canvas.width = PAGE_WIDTH;
-  canvas.height = PAGE_HEIGHT;
+  canvas.width = A4_WIDTH;
+  canvas.height = A4_HEIGHT;
   const ctx = canvas.getContext('2d')!;
-  // White background
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, PAGE_WIDTH, PAGE_HEIGHT);
+  ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
   return { canvas, ctx };
 }
 
@@ -104,6 +103,7 @@ function fitText(
   text: string,
   maxWidth: number
 ): string {
+  if (!text) return '';
   if (ctx.measureText(text).width <= maxWidth) return text;
   let truncated = text;
   while (truncated.length > 3 && ctx.measureText(truncated + '...').width > maxWidth) {
@@ -112,7 +112,88 @@ function fitText(
   return truncated + '...';
 }
 
-function drawFooter(
+/**
+ * Standardized Date and Time Formatter for PDF generation.
+ * Avoids browser BiDi reordering quirks (such as flipped 'م' or scrambled timestamps)
+ * by producing clean, standardized Arabic/English date ribbons.
+ */
+function formatPdfDate(dateString: string, lang: Language = 'ar'): string {
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const isPm = hours >= 12;
+    hours = hours % 12 || 12;
+    const hStr = String(hours).padStart(2, '0');
+
+    if (lang === 'ar') {
+      const ampm = isPm ? 'م' : 'ص';
+      return `${year}/${month}/${day}   ${hStr}:${minutes} ${ampm}`;
+    } else {
+      const ampm = isPm ? 'PM' : 'AM';
+      return `${year}-${month}-${day}   ${hStr}:${minutes} ${ampm}`;
+    }
+  } catch {
+    return dateString;
+  }
+}
+
+interface ColumnDef {
+  key: string;
+  title: string;
+  width: number;
+  align: 'left' | 'center' | 'right';
+}
+
+interface ComputedColumn extends ColumnDef {
+  left: number;
+  right: number;
+  center: number;
+}
+
+/**
+ * Computes exact non-overlapping column bounds across RTL and LTR layouts.
+ */
+function computeColumnBounds(
+  cols: ColumnDef[],
+  tableLeft: number,
+  totalWidth: number,
+  isRtl: boolean
+): ComputedColumn[] {
+  const result: ComputedColumn[] = [];
+  if (isRtl) {
+    let curRight = tableLeft + totalWidth;
+    for (const col of cols) {
+      const left = curRight - col.width;
+      result.push({
+        ...col,
+        left,
+        right: curRight,
+        center: (left + curRight) / 2,
+      });
+      curRight = left;
+    }
+  } else {
+    let curLeft = tableLeft;
+    for (const col of cols) {
+      const right = curLeft + col.width;
+      result.push({
+        ...col,
+        left: curLeft,
+        right,
+        center: (curLeft + right) / 2,
+      });
+      curLeft = right;
+    }
+  }
+  return result;
+}
+
+function drawA4Footer(
   ctx: CanvasRenderingContext2D,
   pageNum: number,
   totalPages: number,
@@ -122,27 +203,25 @@ function drawFooter(
   ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(MARGIN_X, 1680);
-  ctx.lineTo(PAGE_WIDTH - MARGIN_X, 1680);
+  ctx.moveTo(A4_MARGIN_X, 1680);
+  ctx.lineTo(A4_WIDTH - A4_MARGIN_X, 1680);
   ctx.stroke();
 
-  ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = '#94a3b8';
+  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
   ctx.direction = isRtl ? 'rtl' : 'ltr';
 
-  // System branding
   const brandText = isRtl
     ? 'تم إصدار هذه الوثيقة آلياً عبر نظام الدفتر الذكي (The Smart Dafter)'
     : 'Issued electronically via The Smart Dafter';
   ctx.textAlign = isRtl ? 'right' : 'left';
-  ctx.fillText(brandText, isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X, 1710);
+  ctx.fillText(brandText, isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X, 1710);
 
-  // Page numbering
   const pageText = isRtl
     ? `صفحة ${pageNum} من ${totalPages}`
     : `Page ${pageNum} of ${totalPages}`;
   ctx.textAlign = isRtl ? 'left' : 'right';
-  ctx.fillText(pageText, isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X, 1710);
+  ctx.fillText(pageText, isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X, 1710);
 
   ctx.restore();
 }
@@ -175,7 +254,7 @@ export async function generateStatementPdf(
     try {
       await document.fonts.ready;
     } catch {
-      // Ignore font readiness timeout
+      // Font readiness fallback
     }
   }
 
@@ -202,7 +281,6 @@ export async function generateStatementPdf(
     runningBalance: number;
   }> = [];
 
-  // Opening balance row if non-zero
   if (rolling !== 0) {
     rows.push({
       index: 0,
@@ -266,21 +344,21 @@ export async function generateStatementPdf(
     });
   }
 
-  // 2. Table Column Dimensions (total = 1120px)
-  const cols = [
-    { key: 'index', width: 60, title: '#' },
-    { key: 'date', width: 130, title: isRtl ? 'التاريخ' : 'Date' },
-    { key: 'ref', width: 140, title: isRtl ? 'رقم السند' : 'Ref #' },
-    { key: 'desc', width: 350, title: isRtl ? 'البيان والتفاصيل' : 'Description' },
-    { key: 'debit', width: 140, title: isRtl ? 'مدين (+)' : 'Debit (+)' },
-    { key: 'credit', width: 140, title: isRtl ? 'دائن (-)' : 'Credit (-)' },
-    { key: 'balance', width: 160, title: isRtl ? 'الرصيد' : 'Balance' },
+  // Column definitions (Sum = 1120px)
+  const statementCols: ColumnDef[] = [
+    { key: 'index', width: 55, title: '#', align: 'center' },
+    { key: 'date', width: 125, title: isRtl ? 'التاريخ' : 'Date', align: 'center' },
+    { key: 'ref', width: 130, title: isRtl ? 'رقم السند' : 'Ref #', align: 'center' },
+    { key: 'desc', width: 370, title: isRtl ? 'البيان والتفاصيل' : 'Description', align: isRtl ? 'right' : 'left' },
+    { key: 'debit', width: 145, title: isRtl ? 'مدين (+)' : 'Debit (+)', align: 'center' },
+    { key: 'credit', width: 145, title: isRtl ? 'دائن (-)' : 'Credit (-)', align: 'center' },
+    { key: 'balance', width: 150, title: isRtl ? 'الرصيد' : 'Balance', align: 'center' },
   ];
 
-  const ROW_HEIGHT = 38;
-  const HEADER_HEIGHT = 42;
+  const computedCols = computeColumnBounds(statementCols, A4_MARGIN_X, A4_CONTENT_WIDTH, isRtl);
 
-  // 3. Multi-page Canvas Collection
+  const ROW_HEIGHT = 40;
+  const HEADER_HEIGHT = 44;
   const pages: HTMLCanvasElement[] = [];
 
   function startNewPage(isFirstPage: boolean): { ctx: CanvasRenderingContext2D; currentY: number } {
@@ -288,25 +366,23 @@ export async function generateStatementPdf(
     pages.push(canvas);
 
     ctx.direction = isRtl ? 'rtl' : 'ltr';
-    let currentY = 60;
+    let currentY = 55;
 
     if (isFirstPage) {
-      // Primary Header Banner
+      // Top Store Header
       ctx.save();
-      // Store Name
-      ctx.font = 'bold 28px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.font = 'bold 30px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#0f172a';
       ctx.textAlign = isRtl ? 'right' : 'left';
-      ctx.fillText(profile.name, isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X, currentY + 30);
+      ctx.fillText(profile.name, isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X, currentY + 30);
 
-      // Store Details (phone, VAT)
       ctx.font = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#475569';
-      let subY = currentY + 54;
+      let subY = currentY + 56;
       if (profile.phone) {
         ctx.fillText(
           `${isRtl ? 'هاتف / جوال: ' : 'Phone: '} ${profile.phone}`,
-          isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X,
+          isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X,
           subY
         );
         subY += 22;
@@ -314,66 +390,65 @@ export async function generateStatementPdf(
       if (profile.taxNumber) {
         ctx.fillText(
           `${isRtl ? 'الرقم الضريبي: ' : 'VAT No: '} ${profile.taxNumber}`,
-          isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X,
+          isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X,
           subY
         );
       }
 
-      // Opposite side: Document Badge & Meta
-      const badgeW = 220;
-      const badgeH = 44;
-      const badgeX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - badgeW;
+      // Title Badge
+      const badgeW = 240;
+      const badgeH = 46;
+      const badgeX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X - badgeW;
       drawRoundedRect(ctx, badgeX, currentY, badgeW, badgeH, 8, '#0f172a');
 
-      ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.font = 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.fillText(
         isRtl ? 'كشف حساب مالي' : 'ACCOUNT STATEMENT',
         badgeX + badgeW / 2,
-        currentY + 28
+        currentY + 29
       );
 
       ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#475569';
       ctx.textAlign = isRtl ? 'left' : 'right';
-      const metaX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X;
+      const metaX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X;
       ctx.fillText(
         `${isRtl ? 'تاريخ الإصدار: ' : 'Date: '} ${formatDate(new Date().toISOString(), lang)}`,
         metaX,
-        currentY + 68
+        currentY + 70
       );
 
       if (startDate || endDate) {
         ctx.fillText(
           `${isRtl ? 'الفترة: ' : 'Period: '} ${startDate || '...'} ${isRtl ? 'إلى' : 'to'} ${endDate || '...'}`,
           metaX,
-          currentY + 88
+          currentY + 92
         );
       }
       ctx.restore();
 
-      currentY += 115;
+      currentY += 120;
 
-      // Divider Line
+      // Divider
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(MARGIN_X, currentY);
-      ctx.lineTo(PAGE_WIDTH - MARGIN_X, currentY);
+      ctx.moveTo(A4_MARGIN_X, currentY);
+      ctx.lineTo(A4_WIDTH - A4_MARGIN_X, currentY);
       ctx.stroke();
 
-      currentY += 20;
+      currentY += 22;
 
       // Account Summary Banner Box
-      const boxH = 110;
-      drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, boxH, 12, '#f8fafc', '#cbd5e1', 1);
+      const boxH = 104;
+      drawRoundedRect(ctx, A4_MARGIN_X, currentY, A4_CONTENT_WIDTH, boxH, 12, '#f8fafc', '#cbd5e1', 1.2);
 
       ctx.save();
-      // Party Column
       ctx.direction = isRtl ? 'rtl' : 'ltr';
       ctx.textAlign = isRtl ? 'right' : 'left';
-      const partyColX = isRtl ? PAGE_WIDTH - MARGIN_X - 25 : MARGIN_X + 25;
+      const partyColX = isRtl ? A4_WIDTH - A4_MARGIN_X - 25 : A4_MARGIN_X + 25;
 
       ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#64748b';
@@ -383,7 +458,7 @@ export async function generateStatementPdf(
         currentY + 28
       );
 
-      ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.font = 'bold 22px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#0f172a';
       ctx.fillText(party.name, partyColX, currentY + 56);
 
@@ -391,9 +466,9 @@ export async function generateStatementPdf(
       ctx.fillStyle = '#475569';
       ctx.fillText(party.phone || '-', partyColX, currentY + 82);
 
-      // Outstanding Balance Column (Opposite side)
+      // Outstanding Balance
       ctx.textAlign = isRtl ? 'left' : 'right';
-      const balanceColX = isRtl ? MARGIN_X + 25 : PAGE_WIDTH - MARGIN_X - 25;
+      const balanceColX = isRtl ? A4_MARGIN_X + 25 : A4_WIDTH - A4_MARGIN_X - 25;
 
       ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#64748b';
@@ -419,7 +494,6 @@ export async function generateStatementPdf(
       ctx.restore();
       currentY += boxH + 25;
     } else {
-      // Subsequent Pages Minimal Header
       ctx.save();
       ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#0f172a';
@@ -427,13 +501,13 @@ export async function generateStatementPdf(
       const repeatTitle = isRtl
         ? `تابع كشف حساب: ${party.name} (${profile.name})`
         : `Statement Continuation: ${party.name} (${profile.name})`;
-      ctx.fillText(repeatTitle, isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X, currentY + 20);
+      ctx.fillText(repeatTitle, isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X, currentY + 20);
 
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(MARGIN_X, currentY + 35);
-      ctx.lineTo(PAGE_WIDTH - MARGIN_X, currentY + 35);
+      ctx.moveTo(A4_MARGIN_X, currentY + 35);
+      ctx.lineTo(A4_WIDTH - A4_MARGIN_X, currentY + 35);
       ctx.stroke();
       ctx.restore();
 
@@ -441,70 +515,61 @@ export async function generateStatementPdf(
     }
 
     // Draw Table Header
-    drawTableHeader(ctx, currentY);
+    drawStatementHeader(ctx, currentY);
     currentY += HEADER_HEIGHT;
 
     return { ctx, currentY };
   }
 
-  function drawTableHeader(ctx: CanvasRenderingContext2D, y: number) {
-    drawRoundedRect(ctx, MARGIN_X, y, CONTENT_WIDTH, HEADER_HEIGHT, 6, '#1e293b');
-
+  function drawStatementHeader(ctx: CanvasRenderingContext2D, y: number) {
+    drawRoundedRect(ctx, A4_MARGIN_X, y, A4_CONTENT_WIDTH, HEADER_HEIGHT, 6, '#1e293b');
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#ffffff';
 
-    let curX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
-    for (const col of cols) {
-      if (isRtl) {
-        ctx.textAlign = col.key === 'desc' || col.key === 'index' || col.key === 'ref' || col.key === 'date' ? 'right' : 'left';
-        const cellX = ctx.textAlign === 'right' ? curX - 10 : curX - col.width + 10;
-        ctx.fillText(col.title, cellX, y + 26);
-        curX -= col.width;
+    for (const col of computedCols) {
+      if (col.align === 'center') {
+        ctx.textAlign = 'center';
+        ctx.fillText(col.title, col.center, y + 27);
+      } else if (col.align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(col.title, col.right - 14, y + 27);
       } else {
-        ctx.textAlign = col.key === 'desc' || col.key === 'index' || col.key === 'ref' || col.key === 'date' ? 'left' : 'right';
-        const cellX = ctx.textAlign === 'left' ? curX + 10 : curX + col.width - 10;
-        ctx.fillText(col.title, cellX, y + 26);
-        curX += col.width;
+        ctx.textAlign = 'left';
+        ctx.fillText(col.title, col.left + 14, y + 27);
       }
     }
     ctx.restore();
   }
 
-  // Draw Statement Rows across pages
   let currentPage = startNewPage(true);
 
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r];
 
-    // Check pagination
-    if (currentPage.currentY + ROW_HEIGHT > BOTTOM_LIMIT - 100) {
+    if (currentPage.currentY + ROW_HEIGHT > A4_BOTTOM_LIMIT - 100) {
       currentPage = startNewPage(false);
     }
 
     const y = currentPage.currentY;
     const ctx = currentPage.ctx;
 
-    // Row zebra striping
     if (r % 2 === 1) {
       ctx.fillStyle = '#f8fafc';
-      ctx.fillRect(MARGIN_X, y, CONTENT_WIDTH, ROW_HEIGHT);
+      ctx.fillRect(A4_MARGIN_X, y, A4_CONTENT_WIDTH, ROW_HEIGHT);
     }
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 1;
-    ctx.strokeRect(MARGIN_X, y, CONTENT_WIDTH, ROW_HEIGHT);
+    ctx.strokeRect(A4_MARGIN_X, y, A4_CONTENT_WIDTH, ROW_HEIGHT);
 
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#1e293b';
 
-    let curX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
-    for (const col of cols) {
+    for (const col of computedCols) {
       let cellText = '';
       let textColor = '#1e293b';
-      let fontOverride: string | null = null;
+      let fontStr = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
 
       if (col.key === 'index') {
         cellText = row.index === 0 ? '-' : String(row.index);
@@ -513,36 +578,35 @@ export async function generateStatementPdf(
         cellText = row.date;
       } else if (col.key === 'ref') {
         cellText = row.ref;
-        fontOverride = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+        fontStr = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
       } else if (col.key === 'desc') {
-        cellText = fitText(ctx, row.desc, col.width - 20);
+        cellText = fitText(ctx, row.desc, col.width - 24);
       } else if (col.key === 'debit') {
         cellText = row.debit > 0 ? formatCurrency(row.debit, currency, lang) : '-';
         textColor = row.debit > 0 ? '#b91c1c' : '#94a3b8';
-        if (row.debit > 0) fontOverride = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+        if (row.debit > 0) fontStr = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
       } else if (col.key === 'credit') {
         cellText = row.credit > 0 ? formatCurrency(row.credit, currency, lang) : '-';
         textColor = row.credit > 0 ? '#047857' : '#94a3b8';
-        if (row.credit > 0) fontOverride = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+        if (row.credit > 0) fontStr = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
       } else if (col.key === 'balance') {
         cellText = formatCurrency(row.runningBalance, currency, lang);
         textColor = '#0f172a';
-        fontOverride = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
+        fontStr = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
       }
 
-      ctx.font = fontOverride || '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.font = fontStr;
       ctx.fillStyle = textColor;
 
-      if (isRtl) {
-        ctx.textAlign = col.key === 'desc' || col.key === 'index' || col.key === 'ref' || col.key === 'date' ? 'right' : 'left';
-        const cellX = ctx.textAlign === 'right' ? curX - 10 : curX - col.width + 10;
-        ctx.fillText(cellText, cellX, y + 24);
-        curX -= col.width;
+      if (col.align === 'center') {
+        ctx.textAlign = 'center';
+        ctx.fillText(cellText, col.center, y + 25);
+      } else if (col.align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(cellText, col.right - 14, y + 25);
       } else {
-        ctx.textAlign = col.key === 'desc' || col.key === 'index' || col.key === 'ref' || col.key === 'date' ? 'left' : 'right';
-        const cellX = ctx.textAlign === 'left' ? curX + 10 : curX + col.width - 10;
-        ctx.fillText(cellText, cellX, y + 24);
-        curX += col.width;
+        ctx.textAlign = 'left';
+        ctx.fillText(cellText, col.left + 14, y + 25);
       }
     }
     ctx.restore();
@@ -551,55 +615,45 @@ export async function generateStatementPdf(
   }
 
   // Totals Row
-  if (currentPage.currentY + ROW_HEIGHT > BOTTOM_LIMIT - 80) {
+  if (currentPage.currentY + ROW_HEIGHT > A4_BOTTOM_LIMIT - 80) {
     currentPage = startNewPage(false);
   }
 
   const totalsY = currentPage.currentY;
   const tCtx = currentPage.ctx;
-  drawRoundedRect(tCtx, MARGIN_X, totalsY, CONTENT_WIDTH, ROW_HEIGHT + 4, 4, '#f1f5f9', '#94a3b8', 1.5);
+  drawRoundedRect(tCtx, A4_MARGIN_X, totalsY, A4_CONTENT_WIDTH, ROW_HEIGHT + 4, 4, '#f1f5f9', '#94a3b8', 1.5);
 
   tCtx.save();
   tCtx.direction = isRtl ? 'rtl' : 'ltr';
-  tCtx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  tCtx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
 
-  // Label: Total
+  // Label
   tCtx.fillStyle = '#0f172a';
   tCtx.textAlign = isRtl ? 'right' : 'left';
-  const labelX = isRtl ? PAGE_WIDTH - MARGIN_X - 20 : MARGIN_X + 20;
-  tCtx.fillText(isRtl ? 'المجموع الإجمالي للحركات:' : 'Total Activity:', labelX, totalsY + 26);
+  const labelX = isRtl ? A4_WIDTH - A4_MARGIN_X - 20 : A4_MARGIN_X + 20;
+  tCtx.fillText(isRtl ? 'المجموع الإجمالي للحركات:' : 'Total Activity:', labelX, totalsY + 28);
 
-  // Exact column alignment matching table rows:
-  // In RTL:
-  // Debit cell is [360, 500], left-aligned at cellX = 370
-  // Credit cell is [220, 360], left-aligned at cellX = 230
-  // Balance cell is [60, 220], left-aligned at cellX = 70
-  // In LTR:
-  // Debit cell is [740, 880], right-aligned at cellX = 870
-  // Credit cell is [880, 1020], right-aligned at cellX = 1010
-  // Balance cell is [1020, 1180], right-aligned at cellX = 1170
-  const debitX = isRtl ? 370 : 870;
-  const creditX = isRtl ? 230 : 1010;
-  const balX = isRtl ? 70 : 1170;
+  // Exact matching column centers:
+  const debitCol = computedCols.find((c) => c.key === 'debit')!;
+  const creditCol = computedCols.find((c) => c.key === 'credit')!;
+  const balCol = computedCols.find((c) => c.key === 'balance')!;
 
-  // Total Debit
+  tCtx.textAlign = 'center';
+
   tCtx.fillStyle = '#b91c1c';
-  tCtx.textAlign = isRtl ? 'left' : 'right';
-  tCtx.fillText(formatCurrency(totalDebit, currency, lang), debitX, totalsY + 26);
+  tCtx.fillText(formatCurrency(totalDebit, currency, lang), debitCol.center, totalsY + 28);
 
-  // Total Credit
   tCtx.fillStyle = '#047857';
-  tCtx.fillText(formatCurrency(totalCredit, currency, lang), creditX, totalsY + 26);
+  tCtx.fillText(formatCurrency(totalCredit, currency, lang), creditCol.center, totalsY + 28);
 
-  // Final Balance
   tCtx.fillStyle = '#0f172a';
-  tCtx.fillText(formatCurrency(rolling, currency, lang), balX, totalsY + 26);
+  tCtx.fillText(formatCurrency(rolling, currency, lang), balCol.center, totalsY + 28);
   tCtx.restore();
 
   currentPage.currentY += ROW_HEIGHT + 35;
 
   // Final Page Bank & Sign-off Block
-  if (currentPage.currentY + 110 > BOTTOM_LIMIT) {
+  if (currentPage.currentY + 110 > A4_BOTTOM_LIMIT) {
     currentPage = startNewPage(false);
   }
 
@@ -607,15 +661,14 @@ export async function generateStatementPdf(
   const signY = currentPage.currentY;
 
   finalCtx.save();
-  // Bank Details Card
   if (profile.iban || profile.bankName) {
     const bankBoxW = 460;
-    drawRoundedRect(finalCtx, MARGIN_X, signY, bankBoxW, 90, 8, '#f8fafc', '#cbd5e1', 1);
+    drawRoundedRect(finalCtx, A4_MARGIN_X, signY, bankBoxW, 90, 8, '#f8fafc', '#cbd5e1', 1);
     finalCtx.direction = isRtl ? 'rtl' : 'ltr';
     finalCtx.textAlign = isRtl ? 'right' : 'left';
     finalCtx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
     finalCtx.fillStyle = '#0f172a';
-    const bTextX = isRtl ? MARGIN_X + bankBoxW - 15 : MARGIN_X + 15;
+    const bTextX = isRtl ? A4_MARGIN_X + bankBoxW - 15 : A4_MARGIN_X + 15;
     finalCtx.fillText(isRtl ? 'بيانات التحويل البنكي للمتجر:' : 'Bank Transfer Details:', bTextX, signY + 26);
 
     finalCtx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
@@ -630,16 +683,16 @@ export async function generateStatementPdf(
     }
   }
 
-  // Stamp & Signature Box (Opposite side)
+  // Stamp Box
   const signBoxW = 320;
-  const signBoxX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - signBoxW;
+  const signBoxX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X - signBoxW;
   drawRoundedRect(finalCtx, signBoxX, signY, signBoxW, 90, 8, '#ffffff', '#cbd5e1', 1);
 
   finalCtx.direction = isRtl ? 'rtl' : 'ltr';
   finalCtx.textAlign = 'center';
-  finalCtx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  finalCtx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   finalCtx.fillStyle = '#0f172a';
-  finalCtx.fillText(profile.name, signBoxX + signBoxW / 2, signY + 26);
+  finalCtx.fillText(profile.name, signBoxX + signBoxW / 2, signY + 28);
 
   finalCtx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
   finalCtx.fillStyle = '#94a3b8';
@@ -650,17 +703,15 @@ export async function generateStatementPdf(
   );
   finalCtx.restore();
 
-  // 4. Draw Footer & Page Numbers on all pages
   const totalPages = pages.length;
   for (let p = 0; p < totalPages; p++) {
     const pCanvas = pages[p];
     const pCtx = pCanvas.getContext('2d')!;
-    drawFooter(pCtx, p + 1, totalPages, isRtl);
+    drawA4Footer(pCtx, p + 1, totalPages, isRtl);
 
     const imgData = pCanvas.toDataURL('image/jpeg', 0.95);
     if (p > 0) doc.addPage();
     doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
-    // Immediately release memory buffers
     pCanvas.width = 0;
     pCanvas.height = 0;
   }
@@ -669,11 +720,7 @@ export async function generateStatementPdf(
 }
 
 // ============================================================================
-// Invoice & Voucher PDF Generator (ZATCA QR Vector Embedded)
-// ============================================================================
-
-// ============================================================================
-// Invoice & Voucher PDF Generator (ZATCA QR Vector Embedded + Items Summary)
+// Thermal 80mm Invoice Generator (Receipt Roll Format)
 // ============================================================================
 
 async function generateThermal80mmInvoicePdf(
@@ -684,22 +731,21 @@ async function generateThermal80mmInvoicePdf(
   const currency = profile.currency || 'SAR';
   const naming = getDocumentNaming(transaction.type, lang, isVatApplied);
   const items = transaction.items || [];
-  const totalItemTypes = items.length;
   const totalUnitsSold = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
   const qrImg = zatcaQrDataUrl ? await loadImage(zatcaQrDataUrl) : null;
   const logoImg = profile.logoBase64 ? await loadImage(profile.logoBase64) : null;
 
-  // 80mm width: 580px canvas width for ultra-sharp phone rendering
   const WIDTH = 580;
   const PADDING = 28;
-  const C_WIDTH = WIDTH - PADDING * 2;
+  const C_WIDTH = WIDTH - PADDING * 2; // 524px
 
-  // Estimate total canvas height
-  const baseH = 740;
+  // Estimate height
+  const baseH = 800;
   const itemsH = items.length * 44;
-  const summaryH = 220;
-  const canvasHeight = Math.max(880, baseH + itemsH + summaryH);
+  const summaryH = 260;
+  const canvasHeight = Math.max(920, baseH + itemsH + summaryH);
+
   if (typeof document === 'undefined') {
     const fallbackDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [80, 200] });
     fallbackDoc.text(`Thermal Invoice: ${transaction.receiptNumber}`, 5, 10);
@@ -714,16 +760,16 @@ async function generateThermal80mmInvoicePdf(
   ctx.fillRect(0, 0, WIDTH, canvasHeight);
   ctx.direction = isRtl ? 'rtl' : 'ltr';
 
-  let y = 32;
+  let y = 30;
 
-  // Logo if present
+  // Logo
   if (logoImg) {
     const lSize = 64;
     ctx.drawImage(logoImg, (WIDTH - lSize) / 2, y, lSize, lSize);
-    y += lSize + 10;
+    y += lSize + 12;
   }
 
-  // Store Name (Large bold)
+  // Store Name
   ctx.font = 'bold 24px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = 'center';
@@ -731,19 +777,19 @@ async function generateThermal80mmInvoicePdf(
   y += 32;
 
   // Phone & Tax
-  ctx.font = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#475569';
   if (profile.phone) {
-    ctx.fillText(`${isRtl ? 'هاتف: ' : 'Phone: '} ${profile.phone}`, WIDTH / 2, y + 16);
-    y += 24;
+    ctx.fillText(`${isRtl ? 'هاتف: ' : 'Phone: '} ${profile.phone}`, WIDTH / 2, y + 14);
+    y += 22;
   }
   if (profile.taxNumber) {
-    ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, WIDTH / 2, y + 16);
-    y += 24;
+    ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, WIDTH / 2, y + 14);
+    y += 22;
   }
 
   // Divider
-  ctx.strokeStyle = '#cbd5e1';
+  ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(PADDING, y + 8);
@@ -752,174 +798,225 @@ async function generateThermal80mmInvoicePdf(
   y += 20;
 
   // Doc Title Badge
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 38, 8, naming.color || '#0f172a');
-  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 40, 8, naming.color || '#0f172a');
+  ctx.font = 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
-  ctx.fillText(naming.title, WIDTH / 2, y + 25);
-  y += 48;
+  ctx.fillText(naming.title, WIDTH / 2, y + 26);
+  y += 50;
 
-  // Receipt Number & Date
-  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", monospace';
+  // Receipt Number & Date Strip
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 40, 8, '#f8fafc', '#e2e8f0', 1);
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
-  ctx.textAlign = isRtl ? 'right' : 'left';
-  ctx.fillText(`#${transaction.receiptNumber}`, isRtl ? WIDTH - PADDING : PADDING, y + 16);
 
-  ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = '#64748b';
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  const rNumX = isRtl ? WIDTH - PADDING - 14 : PADDING + 14;
+  ctx.fillText(`${isRtl ? 'رقم الفاتورة: ' : 'Invoice #: '} ${transaction.receiptNumber}`, rNumX, y + 25);
+
   ctx.textAlign = isRtl ? 'left' : 'right';
-  ctx.fillText(formatDate(transaction.date, lang), isRtl ? PADDING : WIDTH - PADDING, y + 16);
-  y += 30;
+  const rDateX = isRtl ? PADDING + 14 : WIDTH - PADDING - 14;
+  ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#475569';
+  ctx.fillText(formatPdfDate(transaction.date, lang), rDateX, y + 25);
+  y += 50;
 
   // Customer Card
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 68, 8, '#f8fafc', '#e2e8f0', 1);
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 70, 8, '#f8fafc', '#e2e8f0', 1);
   ctx.textAlign = isRtl ? 'right' : 'left';
   ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
   ctx.fillText(naming.recipientLabel, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 22);
 
-  ctx.font = 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
-  ctx.fillText(party.name, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 46);
+  ctx.fillText(fitText(ctx, party.name, C_WIDTH - 140), isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 48);
 
   if (party.phone) {
     ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#475569';
     ctx.textAlign = isRtl ? 'left' : 'right';
-    ctx.fillText(party.phone, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 46);
+    ctx.fillText(party.phone, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 48);
   }
   y += 82;
 
   // Items Table
   if (items.length > 0) {
-    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 34, 6, '#1e293b');
-    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    const thermalCols: ColumnDef[] = [
+      { key: 'name', width: 244, title: isRtl ? 'الصنف' : 'Item', align: isRtl ? 'right' : 'left' },
+      { key: 'qtyPrice', width: 140, title: isRtl ? 'الكمية × السعر' : 'Qty × Price', align: 'center' },
+      { key: 'total', width: 140, title: isRtl ? 'الإجمالي' : 'Total', align: 'center' },
+    ];
+    const cCols = computeColumnBounds(thermalCols, PADDING, C_WIDTH, isRtl);
+
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 36, 6, '#1e293b');
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#ffffff';
 
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(isRtl ? 'الصنف' : 'Item', isRtl ? WIDTH - PADDING - 10 : PADDING + 10, y + 22);
-    ctx.textAlign = 'center';
-    ctx.fillText(isRtl ? 'الكمية' : 'Qty', WIDTH / 2 + (isRtl ? 10 : -10), y + 22);
-    ctx.textAlign = isRtl ? 'left' : 'right';
-    ctx.fillText(isRtl ? 'الإجمالي' : 'Total', isRtl ? PADDING + 10 : WIDTH - PADDING - 10, y + 22);
-    y += 34;
+    for (const col of cCols) {
+      if (col.align === 'center') {
+        ctx.textAlign = 'center';
+        ctx.fillText(col.title, col.center, y + 24);
+      } else if (col.align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(col.title, col.right - 10, y + 24);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.fillText(col.title, col.left + 10, y + 24);
+      }
+    }
+    y += 36;
 
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (i % 2 === 1) {
         ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(PADDING, y, C_WIDTH, 38);
+        ctx.fillRect(PADDING, y, C_WIDTH, 40);
       }
       ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(PADDING, y, C_WIDTH, 38);
+      ctx.strokeRect(PADDING, y, C_WIDTH, 40);
 
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.textAlign = isRtl ? 'right' : 'left';
-      ctx.fillText(fitText(ctx, it.name, 230), isRtl ? WIDTH - PADDING - 10 : PADDING + 10, y + 24);
+      ctx.save();
+      ctx.direction = isRtl ? 'rtl' : 'ltr';
 
-      ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${it.quantity} × ${it.unitPrice}`, WIDTH / 2 + (isRtl ? 10 : -10), y + 24);
+      for (const col of cCols) {
+        let text = '';
+        let fontStr = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+        let clr = '#0f172a';
 
-      ctx.textAlign = isRtl ? 'left' : 'right';
-      ctx.fillText(formatCurrency(it.subtotal, currency, lang), isRtl ? PADDING + 10 : WIDTH - PADDING - 10, y + 24);
-      y += 38;
+        if (col.key === 'name') {
+          text = fitText(ctx, it.name, col.width - 20);
+          fontStr = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+        } else if (col.key === 'qtyPrice') {
+          text = `${it.quantity} × ${formatCurrency(it.unitPrice, currency, lang)}`;
+        } else if (col.key === 'total') {
+          text = formatCurrency(it.subtotal, currency, lang);
+          fontStr = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+        }
+
+        ctx.font = fontStr;
+        ctx.fillStyle = clr;
+
+        if (col.align === 'center') {
+          ctx.textAlign = 'center';
+          ctx.fillText(text, col.center, y + 25);
+        } else if (col.align === 'right') {
+          ctx.textAlign = 'right';
+          ctx.fillText(text, col.right - 10, y + 25);
+        } else {
+          ctx.textAlign = 'left';
+          ctx.fillText(text, col.left + 10, y + 25);
+        }
+      }
+      ctx.restore();
+      y += 40;
+    }
+    y += 16;
+  }
+
+  // Financial Summary Card
+  const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
+  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
+  const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
+
+  const summaryLines: Array<{ label: string; value: string; isBold?: boolean; color?: string; isDivider?: boolean }> = [];
+  if (totalUnitsSold > 0) {
+    summaryLines.push({ label: isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:', value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`, color: '#047857' });
+  }
+  summaryLines.push({ label: isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', value: formatCurrency(subtotal, currency, lang) });
+  if (transaction.discountAmount && transaction.discountAmount > 0) {
+    summaryLines.push({ label: isRtl ? 'الخصم / التخفيض:' : 'Discount:', value: `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, color: '#b91c1c' });
+  }
+  if (isVatInclusive) {
+    summaryLines.push({ label: `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`, value: `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}` });
+  }
+  summaryLines.push({ label: '', value: '', isDivider: true });
+  summaryLines.push({ label: isRtl ? 'الإجمالي الصافي النهائي:' : 'Total Amount:', value: formatCurrency(transaction.totalAmount, currency, lang), isBold: true, color: '#0f172a' });
+  if (transaction.paidAmount > 0) {
+    summaryLines.push({ label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:', value: formatCurrency(transaction.paidAmount, currency, lang), color: '#047857' });
+  }
+  if (remaining > 0) {
+    summaryLines.push({ label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining Debt:', value: formatCurrency(remaining, currency, lang), isBold: true, color: '#b91c1c' });
+  }
+
+  // Calculate exact box height
+  let sumBoxH = 34; // header padding
+  for (const line of summaryLines) {
+    sumBoxH += line.isDivider ? 18 : (line.isBold ? 38 : 30);
+  }
+  sumBoxH += 12;
+
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumBoxH, 10, '#f8fafc', '#cbd5e1', 1.2);
+  let curSumY = y + 26;
+
+  for (const line of summaryLines) {
+    if (line.isDivider) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(PADDING + 14, curSumY + 6);
+      ctx.lineTo(WIDTH - PADDING - 14, curSumY + 6);
+      ctx.stroke();
+      curSumY += 18;
+      continue;
     }
 
-    y += 14;
-  }
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = line.isBold ? 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif' : '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = line.color || '#0f172a';
 
-  // Unified Simple Financial Summary (ملخص الفاتورة البسيط)
-  // Rows: Quantity Sold, Subtotal, Discount, VAT (only if inclusive), Total, plus paid/balance
-  const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
-  const rowsCount = 3 + (isVatInclusive ? 1 : 0) + (transaction.paidAmount > 0 ? 1 : 0) + (transaction.totalAmount > transaction.paidAmount ? 1 : 0);
-  const sumBoxH = 32 + rowsCount * 28 + 14;
-
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumBoxH, 8, '#f8fafc', '#cbd5e1', 1.2);
-  let fY = y + 26;
-  const drawFinLine = (lbl: string, val: string, isBld = false, clr = '#0f172a') => {
-    ctx.font = isBld ? 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif' : '14px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = clr;
     ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(lbl, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, fY);
+    ctx.fillText(line.label, isRtl ? WIDTH - PADDING - 16 : PADDING + 16, curSumY);
+
     ctx.textAlign = isRtl ? 'left' : 'right';
-    ctx.fillText(val, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, fY);
-    fY += 28;
-  };
+    ctx.fillText(line.value, isRtl ? PADDING + 16 : WIDTH - PADDING - 16, curSumY);
+    ctx.restore();
 
-  // Row 1: Quantity Sold
-  if (totalUnitsSold > 0) {
-    drawFinLine(isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:', `${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`, false, '#047857');
+    curSumY += line.isBold ? 38 : 30;
   }
 
-  // Row 2: Subtotal
-  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
-  drawFinLine(isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+  y += sumBoxH + 20;
 
-  // Row 3: Discount
-  if (transaction.discountAmount && transaction.discountAmount > 0) {
-    drawFinLine(isRtl ? 'الخصم / الحسم:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
-  }
-
-  // Row 4: VAT (ONLY IF INVOICE IS VAT INCLUSIVE / VAT APPLIED)
-  if (isVatInclusive) {
-    drawFinLine(
-      `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
-      `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`
-    );
-  }
-
-  // Divider
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(PADDING + 10, fY - 8);
-  ctx.lineTo(WIDTH - PADDING - 10, fY - 8);
-  ctx.stroke();
-
-  // Row 5: Total
-  drawFinLine(isRtl ? 'الإجمالي الصافي النهائي:' : 'Total Amount:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
-
-  // Paid Now & Remaining
-  if (transaction.paidAmount > 0) {
-    drawFinLine(isRtl ? 'المدفوع نقداً:' : 'Paid Now:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
-  }
-  const rem = Math.max(0, transaction.totalAmount - transaction.paidAmount);
-  if (rem > 0) {
-    drawFinLine(isRtl ? 'المتبقي بالآجل:' : 'Remaining Debt:', formatCurrency(rem, currency, lang), true, '#b91c1c');
-  }
-  y += sumBoxH + 16;
-
-  // QR Code
+  // ZATCA QR Code
   if (qrImg) {
-    const qSize = 150;
-    ctx.drawImage(qrImg, (WIDTH - qSize) / 2, y, qSize, qSize);
-    y += qSize + 14;
+    const qSize = 140;
+    const qrCardW = 220;
+    const qrCardH = 210;
+    const qrCardX = (WIDTH - qrCardW) / 2;
+    drawRoundedRect(ctx, qrCardX, y, qrCardW, qrCardH, 10, '#ffffff', '#e2e8f0', 1.2);
+
+    ctx.drawImage(qrImg, qrCardX + (qrCardW - qSize) / 2, y + 14, qSize, qSize);
+
     ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#334155';
     ctx.textAlign = 'center';
-    ctx.fillText(isRtl ? 'فاتورة ضريبية مبسطة - هيئة الزكاة والضريبة' : 'ZATCA Simplified Tax Invoice', WIDTH / 2, y + 10);
-    y += 24;
+    ctx.fillText(isRtl ? 'فاتورة ضريبية مبسطة (ZATCA)' : 'ZATCA Simplified Tax Invoice', WIDTH / 2, y + qSize + 36);
+
+    ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(isRtl ? 'معتمدة إلكترونياً' : 'E-Invoice Verified', WIDTH / 2, y + qSize + 54);
+
+    y += qrCardH + 20;
   }
 
   // Footer Note
   if (profile.invoiceFooterNote) {
-    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#94a3b8';
+    ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
     ctx.textAlign = 'center';
     ctx.fillText(profile.invoiceFooterNote, WIDTH / 2, y + 14);
     y += 24;
   }
 
   // Branding
-  ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = '#cbd5e1';
+  ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
   ctx.textAlign = 'center';
   ctx.fillText(isRtl ? 'الدفتر الذكي - The Smart Dafter' : 'The Smart Dafter Mobile POS', WIDTH / 2, y + 14);
-  y += 26;
+  y += 30;
 
-  const finalH = Math.max(400, y + 16);
+  const finalH = Math.max(400, y);
   const heightMm = Math.round((finalH / WIDTH) * 80);
 
   const doc = new jsPDF({
@@ -938,7 +1035,7 @@ async function generateThermal80mmInvoicePdf(
 }
 
 // ============================================================================
-// Mobile Phone Optimized PDF Generator (Ultra-large typography, no zoom needed)
+// Mobile Phone Optimized PDF Generator (Ultra-sharp, Large Fonts, High Contrast)
 // ============================================================================
 
 async function generateMobilePhoneInvoicePdf(
@@ -950,7 +1047,6 @@ async function generateMobilePhoneInvoicePdf(
   const naming = getDocumentNaming(transaction.type, lang, isVatApplied);
   const docTitle = naming.title;
   const items = transaction.items || [];
-  const totalItemTypes = items.length;
   const totalUnitsSold = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
   if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
@@ -964,7 +1060,7 @@ async function generateMobilePhoneInvoicePdf(
   const qrImg = zatcaQrDataUrl ? await loadImage(zatcaQrDataUrl) : null;
   const logoImg = profile.logoBase64 ? await loadImage(profile.logoBase64) : null;
 
-  // 720px width: 2x sharp mobile canvas width tailored for phone displays
+  // 720px width: 2x sharp mobile canvas width tailored for phone screens
   const WIDTH = 720;
   const PADDING = 28;
   const C_WIDTH = WIDTH - PADDING * 2; // 664px
@@ -972,9 +1068,10 @@ async function generateMobilePhoneInvoicePdf(
   // Estimate total canvas height
   const baseH = 920;
   const itemsH = items.length * 48;
-  const summaryH = 260;
-  const qrH = qrImg ? 220 : 100;
-  const canvasHeight = Math.max(1100, baseH + itemsH + summaryH + qrH);
+  const summaryH = 320;
+  const qrH = qrImg ? 260 : 60;
+  const canvasHeight = Math.max(1150, baseH + itemsH + summaryH + qrH);
+
   if (typeof document === 'undefined') {
     const fallbackDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 240] });
     fallbackDoc.text(`Mobile Invoice: ${transaction.receiptNumber}`, 5, 10);
@@ -989,30 +1086,35 @@ async function generateMobilePhoneInvoicePdf(
   ctx.fillRect(0, 0, WIDTH, canvasHeight);
   ctx.direction = isRtl ? 'rtl' : 'ltr';
 
-  let y = 32;
+  let y = 30;
 
-  // 1. Top Header Banner
+  // 1. Header Banner: Business Identity & Logo
   if (logoImg) {
-    const lSize = 72;
-    ctx.drawImage(logoImg, isRtl ? WIDTH - PADDING - lSize : PADDING, y, lSize, lSize);
+    const lSize = 74;
+    const lBoxX = isRtl ? WIDTH - PADDING - lSize : PADDING;
+    drawRoundedRect(ctx, lBoxX, y, lSize, lSize, 10, '#ffffff', '#e2e8f0', 1);
+    ctx.drawImage(logoImg, lBoxX + 4, y + 4, lSize - 8, lSize - 8);
   }
 
   const textStartX = logoImg
-    ? (isRtl ? WIDTH - PADDING - 88 : PADDING + 88)
+    ? (isRtl ? WIDTH - PADDING - 90 : PADDING + 90)
     : (isRtl ? WIDTH - PADDING : PADDING);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
   ctx.textAlign = isRtl ? 'right' : 'left';
-  ctx.font = 'bold 30px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = '#0f172a';
-  ctx.fillText(fitText(ctx, profile.name, C_WIDTH - (logoImg ? 90 : 0)), textStartX, y + 32);
 
-  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+  // Business Name
+  ctx.font = 'bold 28px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#0f172a';
+  ctx.fillText(fitText(ctx, profile.name, C_WIDTH - (logoImg ? 100 : 0)), textStartX, y + 32);
+
+  // Business Details
+  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#475569';
-  let subY = y + 60;
+  let subY = y + 58;
   if (profile.phone) {
-    ctx.fillText(`${isRtl ? 'الهاتف: ' : 'Phone: '} ${profile.phone}`, textStartX, subY);
+    ctx.fillText(`${isRtl ? 'هاتف / جوال: ' : 'Phone: '} ${profile.phone}`, textStartX, subY);
     subY += 24;
   }
   if (profile.taxNumber) {
@@ -1020,151 +1122,207 @@ async function generateMobilePhoneInvoicePdf(
   }
   ctx.restore();
 
-  y += logoImg ? 92 : 82;
+  y += logoImg ? 96 : 84;
 
-  // Doc Title Badge & Reference
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 48, 8, naming.color || '#0f172a');
+  // 2. Document Title Badge
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 46, 8, naming.color || '#0f172a');
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
-  ctx.font = 'bold 22px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
-  ctx.fillText(docTitle, WIDTH / 2, y + 32);
+  ctx.fillText(docTitle, WIDTH / 2, y + 30);
   ctx.restore();
-  y += 60;
+  y += 58;
 
-  // Receipt Number & Date (Bolder & larger font for instant phone reading)
+  // 3. Receipt Number & Issue Date Strip
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 42, 8, '#f8fafc', '#e2e8f0', 1.2);
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
-  ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", monospace';
-  ctx.fillStyle = '#0f172a';
+
+  // Receipt Number
   ctx.textAlign = isRtl ? 'right' : 'left';
-  ctx.fillText(`#${transaction.receiptNumber}`, isRtl ? WIDTH - PADDING : PADDING, y + 18);
-
-  ctx.font = 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif';
+  const rX = isRtl ? WIDTH - PADDING - 18 : PADDING + 18;
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.textAlign = isRtl ? 'left' : 'right';
-  ctx.fillText(formatDate(transaction.date, lang), isRtl ? PADDING : WIDTH - PADDING, y + 18);
-  ctx.restore();
-  y += 34;
+  ctx.fillText(isRtl ? 'رقم الفاتورة: ' : 'Invoice No: ', rX, y + 26);
 
-  // Recipient / Customer Card
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 96, 10, '#f8fafc', '#cbd5e1', 1.2);
+  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", monospace';
+  ctx.fillStyle = '#0f172a';
+  const numOffset = isRtl ? -88 : 88;
+  ctx.fillText(transaction.receiptNumber, rX + numOffset, y + 26);
+
+  // Issue Date & Time
+  ctx.textAlign = isRtl ? 'left' : 'right';
+  const dX = isRtl ? PADDING + 18 : WIDTH - PADDING - 18;
+  ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#475569';
+  ctx.fillText(`${isRtl ? 'تاريخ الإصدار: ' : 'Date: '} ${formatPdfDate(transaction.date, lang)}`, dX, y + 26);
+  ctx.restore();
+  y += 54;
+
+  // 4. Customer / Party Card
+  const partyCardH = 96;
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, partyCardH, 10, '#f8fafc', '#cbd5e1', 1.2);
+
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
+
+  // Right Side: Party Details
   ctx.textAlign = isRtl ? 'right' : 'left';
   const recX = isRtl ? WIDTH - PADDING - 18 : PADDING + 18;
 
-  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(naming.recipientLabel, recX, y + 26);
+  ctx.fillText(
+    party.type === 'CUSTOMER'
+      ? (isRtl ? 'العميل المكرم (ذمة مدينة):' : 'CUSTOMER:')
+      : (isRtl ? 'المورد المعتمد (ذمة دائنة):' : 'SUPPLIER:'),
+    recX,
+    y + 24
+  );
 
-  ctx.font = 'bold 24px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 22px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
-  ctx.fillText(fitText(ctx, party.name, C_WIDTH - 240), recX, y + 56);
+  ctx.fillText(fitText(ctx, party.name, C_WIDTH - 240), recX, y + 54);
 
   if (party.phone) {
-    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#475569';
-    ctx.fillText(party.phone, recX, y + 84);
+    ctx.fillText(`${isRtl ? 'الجوال: ' : 'Phone: '} ${party.phone}`, recX, y + 80);
   }
 
-  // Current balance callout inside recipient card
-  ctx.textAlign = isRtl ? 'left' : 'right';
-  const balX = isRtl ? PADDING + 18 : WIDTH - PADDING - 18;
-  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+  // Left Side: Current Balance Card Callout
+  const balBoxW = 200;
+  const balBoxH = 72;
+  const balBoxX = isRtl ? PADDING + 14 : WIDTH - PADDING - 14 - balBoxW;
+  const balBoxY = y + 12;
+  drawRoundedRect(ctx, balBoxX, balBoxY, balBoxW, balBoxH, 8, '#ffffff', '#cbd5e1', 1);
+
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(isRtl ? 'الرصيد الحالي:' : 'Balance:', balX, y + 26);
+  ctx.fillText(isRtl ? 'الرصيد القائم الحالي:' : 'Current Balance:', balBoxX + balBoxW / 2, balBoxY + 22);
 
-  ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", monospace';
-  ctx.fillStyle = '#0f172a';
-  ctx.fillText(formatCurrency(party.currentBalance, currency, lang), balX, y + 56);
+  const balColor = party.currentBalance > 0
+    ? (party.type === 'CUSTOMER' ? '#b91c1c' : '#b45309')
+    : '#047857';
+
+  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = balColor;
+  ctx.fillText(formatCurrency(party.currentBalance, currency, lang), balBoxX + balBoxW / 2, balBoxY + 46);
+
+  ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  const balStatus = party.currentBalance === 0
+    ? (isRtl ? 'حساب خالص بالكامل' : 'Account Settled')
+    : (party.type === 'CUSTOMER' ? (isRtl ? '(مستحق بذمة العميل)' : '(Owed by Customer)') : (isRtl ? '(مستحق للمورد)' : '(Owed to Supplier)'));
+  ctx.fillText(balStatus, balBoxX + balBoxW / 2, balBoxY + 64);
+
   ctx.restore();
-  y += 112;
+  y += partyCardH + 18;
 
-  // 2. Line Items Table (For Sale, Supply, Return)
+  // 5. Line Items Table (Mathematically aligned columns)
   if (items.length > 0) {
-    const itemCols = [
-      { key: 'idx', width: 44, title: '#' },
-      { key: 'name', width: 310, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description' },
-      { key: 'qty', width: 100, title: isRtl ? 'الكمية' : 'Qty' },
-      { key: 'price', width: 100, title: isRtl ? 'السعر' : 'Price' },
-      { key: 'total', width: 110, title: isRtl ? 'الإجمالي' : 'Total' },
+    // Total table width = 664px
+    // # (44) + Name (260) + Qty (70) + Price (140) + Total (150) = 664
+    const itemCols: ColumnDef[] = [
+      { key: 'idx', width: 44, title: '#', align: 'center' },
+      { key: 'name', width: 260, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description', align: isRtl ? 'right' : 'left' },
+      { key: 'qty', width: 70, title: isRtl ? 'الكمية' : 'Qty', align: 'center' },
+      { key: 'price', width: 140, title: isRtl ? 'السعر' : 'Price', align: 'center' },
+      { key: 'total', width: 150, title: isRtl ? 'الإجمالي' : 'Total', align: 'center' },
     ];
 
-    // Table Header (Enlarged 18px font)
-    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 44, 6, '#1e293b');
+    const computedCols = computeColumnBounds(itemCols, PADDING, C_WIDTH, isRtl);
+
+    // Table Header Bar
+    const TH_HEIGHT = 44;
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, TH_HEIGHT, 6, '#1e293b');
+
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#ffffff';
 
-    let hX = isRtl ? WIDTH - PADDING : PADDING;
-    for (const col of itemCols) {
-      if (isRtl) {
-        ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'right' : 'left';
-        const cX = ctx.textAlign === 'right' ? hX - 10 : hX - col.width + 10;
-        ctx.fillText(col.title, cX, y + 28);
-        hX -= col.width;
+    for (const col of computedCols) {
+      if (col.align === 'center') {
+        ctx.textAlign = 'center';
+        ctx.fillText(col.title, col.center, y + 28);
+      } else if (col.align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(col.title, col.right - 12, y + 28);
       } else {
-        ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'left' : 'right';
-        const cX = ctx.textAlign === 'left' ? hX + 10 : hX + col.width - 10;
-        ctx.fillText(col.title, cX, y + 28);
-        hX += col.width;
+        ctx.textAlign = 'left';
+        ctx.fillText(col.title, col.left + 12, y + 28);
       }
     }
     ctx.restore();
-    y += 44;
+    y += TH_HEIGHT;
 
-    // Items Rows (Row height 46px, font 18px)
+    // Table Rows
+    const TR_HEIGHT = 44;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       if (i % 2 === 1) {
         ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(PADDING, y, C_WIDTH, 46);
+        ctx.fillRect(PADDING, y, C_WIDTH, TR_HEIGHT);
       }
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 1;
-      ctx.strokeRect(PADDING, y, C_WIDTH, 46);
+      ctx.strokeRect(PADDING, y, C_WIDTH, TR_HEIGHT);
 
       ctx.save();
       ctx.direction = isRtl ? 'rtl' : 'ltr';
-      ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#1e293b';
 
-      let rowX = isRtl ? WIDTH - PADDING : PADDING;
-      for (const col of itemCols) {
+      for (const col of computedCols) {
         let text = '';
-        if (col.key === 'idx') text = String(i + 1);
-        else if (col.key === 'name') text = fitText(ctx, it.name, col.width - 16);
-        else if (col.key === 'qty') text = String(it.quantity);
-        else if (col.key === 'price') text = formatCurrency(it.unitPrice, currency, lang);
-        else if (col.key === 'total') text = formatCurrency(it.subtotal, currency, lang);
+        let fontStr = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
+        let clr = '#0f172a';
 
-        if (isRtl) {
-          ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'right' : 'left';
-          const cX = ctx.textAlign === 'right' ? rowX - 10 : rowX - col.width + 10;
-          ctx.fillText(text, cX, y + 30);
-          rowX -= col.width;
+        if (col.key === 'idx') {
+          text = String(i + 1);
+          clr = '#64748b';
+        } else if (col.key === 'name') {
+          text = fitText(ctx, it.name, col.width - 24);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+        } else if (col.key === 'qty') {
+          text = String(it.quantity);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", monospace';
+        } else if (col.key === 'price') {
+          text = formatCurrency(it.unitPrice, currency, lang);
+          fontStr = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+        } else if (col.key === 'total') {
+          text = formatCurrency(it.subtotal, currency, lang);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+        }
+
+        ctx.font = fontStr;
+        ctx.fillStyle = clr;
+
+        if (col.align === 'center') {
+          ctx.textAlign = 'center';
+          ctx.fillText(text, col.center, y + 28);
+        } else if (col.align === 'right') {
+          ctx.textAlign = 'right';
+          ctx.fillText(text, col.right - 12, y + 28);
         } else {
-          ctx.textAlign = col.key === 'name' || col.key === 'idx' ? 'left' : 'right';
-          const cX = ctx.textAlign === 'left' ? rowX + 10 : rowX + col.width - 10;
-          ctx.fillText(text, cX, y + 30);
-          rowX += col.width;
+          ctx.textAlign = 'left';
+          ctx.fillText(text, col.left + 12, y + 28);
         }
       }
       ctx.restore();
-      y += 46;
+      y += TR_HEIGHT;
     }
-    y += 16;
+    y += 18;
   } else {
-    // Payment Receipt / Voucher
+    // Payment Receipt / Voucher Highlight
     const payH = 110;
     drawRoundedRect(ctx, PADDING, y, C_WIDTH, payH, 10, '#f8fafc', '#cbd5e1', 1.2);
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#64748b';
     ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', WIDTH / 2, y + 36);
 
@@ -1175,91 +1333,174 @@ async function generateMobilePhoneInvoicePdf(
     y += payH + 20;
   }
 
-  // Unified Simple Financial Summary Card (ملخص الفاتورة الموحد والبسيط)
-  // Rows: Quantity Sold, Subtotal, Discount, VAT (only if inclusive), Total, plus paid/remaining
+  // 6. Unified Financial Summary Card (Zero-overlap dynamic rows)
   const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
-  const rowsCount = 3 + (isVatInclusive ? 1 : 0) + (transaction.paidAmount > 0 ? 1 : 0) + (transaction.totalAmount > transaction.paidAmount ? 1 : 0);
-  const cardH = 34 + rowsCount * 36 + 24;
+  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
+  const remainingDebt = Math.max(0, transaction.totalAmount - transaction.paidAmount);
 
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, cardH, 10, '#f8fafc', '#cbd5e1', 1.2);
-  ctx.save();
-  ctx.direction = isRtl ? 'rtl' : 'ltr';
-  let tY = y + 34;
+  interface FinSummaryRow {
+    label: string;
+    value: string;
+    isDivider?: boolean;
+    isTotal?: boolean;
+    isLarge?: boolean;
+    color?: string;
+  }
 
-  const drawPhoneTotalLine = (label: string, value: string, isBig = false, color = '#1e293b') => {
-    ctx.font = isBig
-      ? 'bold 24px Cairo, Tahoma, "Segoe UI", sans-serif'
-      : 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = color;
-
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    const lX = isRtl ? WIDTH - PADDING - 20 : PADDING + 20;
-    ctx.fillText(label, lX, tY);
-
-    ctx.textAlign = isRtl ? 'left' : 'right';
-    const vX = isRtl ? PADDING + 20 : WIDTH - PADDING - 20;
-    ctx.fillText(value, vX, tY);
-
-    tY += isBig ? 40 : 34;
-  };
+  const summaryRows: FinSummaryRow[] = [];
 
   // Row 1: Quantity Sold
   if (totalUnitsSold > 0) {
-    drawPhoneTotalLine(isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:', `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`, false, '#047857');
+    summaryRows.push({
+      label: isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:',
+      value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`,
+      color: '#047857',
+    });
   }
 
   // Row 2: Subtotal
-  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
-  drawPhoneTotalLine(isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+  summaryRows.push({
+    label: isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:',
+    value: formatCurrency(subtotal, currency, lang),
+    color: '#1e293b',
+  });
 
   // Row 3: Discount
   if (transaction.discountAmount && transaction.discountAmount > 0) {
-    drawPhoneTotalLine(isRtl ? 'الخصم / الحسم:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+    summaryRows.push({
+      label: isRtl ? 'الخصم / التخفيض:' : 'Discount:',
+      value: `- ${formatCurrency(transaction.discountAmount, currency, lang)}`,
+      color: '#b91c1c',
+    });
   }
 
-  // Row 4: VAT (ONLY IF INVOICE IS VAT INCLUSIVE / VAT APPLIED)
+  // Row 4: VAT (Only when applicable)
   if (isVatInclusive) {
-    drawPhoneTotalLine(
-      `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
-      `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`
-    );
+    summaryRows.push({
+      label: `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
+      value: `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`,
+      color: '#475569',
+    });
   }
 
-  // Grand Total Divider Line
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(PADDING + 16, tY - 12);
-  ctx.lineTo(WIDTH - PADDING - 16, tY - 12);
-  ctx.stroke();
+  // Divider before Total
+  summaryRows.push({ label: '', value: '', isDivider: true });
 
-  // Row 5: Total
-  drawPhoneTotalLine(isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+  // Row 5: Grand Total
+  summaryRows.push({
+    label: isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:',
+    value: formatCurrency(transaction.totalAmount, currency, lang),
+    isTotal: true,
+    color: '#0f172a',
+  });
 
-  // Paid & Remaining
+  // Row 6: Paid Amount
   if (transaction.paidAmount > 0) {
-    drawPhoneTotalLine(isRtl ? 'المدفوع نقداً:' : 'Paid Now:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
+    summaryRows.push({
+      label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:',
+      value: formatCurrency(transaction.paidAmount, currency, lang),
+      color: '#047857',
+    });
   }
-  const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
-  if (remaining > 0) {
-    drawPhoneTotalLine(isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', formatCurrency(remaining, currency, lang), true, '#b91c1c');
-  }
-  ctx.restore();
-  y += cardH + 20;
 
-  // 5. ZATCA QR Code (Ultra clear)
-  if (qrImg) {
-    const qrSize = 160;
-    drawRoundedRect(ctx, (WIDTH - qrSize - 40) / 2, y, qrSize + 40, qrSize + 40, 10, '#ffffff', '#cbd5e1', 1.2);
-    ctx.drawImage(qrImg, (WIDTH - qrSize) / 2, y + 10, qrSize, qrSize);
-    y += qrSize + 54;
+  // Row 7: Remaining Debt
+  if (remainingDebt > 0) {
+    summaryRows.push({
+      label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:',
+      value: formatCurrency(remainingDebt, currency, lang),
+      isLarge: true,
+      color: '#b91c1c',
+    });
+  }
+
+  // Compute exact height
+  let cardH = 34; // top header
+  for (const r of summaryRows) {
+    if (r.isDivider) cardH += 22;
+    else if (r.isTotal) cardH += 46;
+    else if (r.isLarge) cardH += 40;
+    else cardH += 34;
+  }
+  cardH += 14;
+
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, cardH, 12, '#f8fafc', '#cbd5e1', 1.2);
+
+  // Summary Card Header Bar
+  ctx.save();
+  ctx.direction = isRtl ? 'rtl' : 'ltr';
+  ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = isRtl ? 'right' : 'left';
+  ctx.fillText(isRtl ? 'ملخص الفاتورة المالي:' : 'FINANCIAL SUMMARY:', isRtl ? WIDTH - PADDING - 18 : PADDING + 18, y + 26);
+  ctx.restore();
+
+  let lineY = y + 54;
+
+  for (const row of summaryRows) {
+    if (row.isDivider) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(PADDING + 16, lineY - 6);
+      ctx.lineTo(WIDTH - PADDING - 16, lineY - 6);
+      ctx.stroke();
+      lineY += 22;
+      continue;
+    }
+
     ctx.save();
-    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.textAlign = 'center';
-    ctx.fillText(isRtl ? 'رمز الفاتورة الإلكترونية المعتمد (ZATCA)' : 'ZATCA E-Invoice QR Code', WIDTH / 2, y);
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+
+    if (row.isTotal) {
+      // Highlight background strip for grand total
+      drawRoundedRect(ctx, PADDING + 10, lineY - 24, C_WIDTH - 20, 36, 6, '#f1f5f9');
+      ctx.font = 'bold 20px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = row.color || '#0f172a';
+    } else if (row.isLarge) {
+      ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = row.color || '#b91c1c';
+    } else {
+      ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = row.color || '#334155';
+    }
+
+    // Label
+    ctx.textAlign = isRtl ? 'right' : 'left';
+    ctx.fillText(row.label, isRtl ? WIDTH - PADDING - 20 : PADDING + 20, lineY);
+
+    // Value
+    ctx.textAlign = isRtl ? 'left' : 'right';
+    ctx.fillText(row.value, isRtl ? PADDING + 20 : WIDTH - PADDING - 20, lineY);
+
     ctx.restore();
-    y += 30;
+
+    lineY += row.isTotal ? 46 : (row.isLarge ? 40 : 34);
+  }
+
+  y += cardH + 22;
+
+  // 7. ZATCA QR Code & Official Verification
+  if (qrImg) {
+    const qrCardW = 260;
+    const qrCardH = 240;
+    const qrCardX = (WIDTH - qrCardW) / 2;
+    drawRoundedRect(ctx, qrCardX, y, qrCardW, qrCardH, 12, '#ffffff', '#e2e8f0', 1.2);
+
+    const qSize = 145;
+    ctx.drawImage(qrImg, qrCardX + (qrCardW - qSize) / 2, y + 16, qSize, qSize);
+
+    ctx.save();
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#1e293b';
+    ctx.textAlign = 'center';
+    ctx.fillText(isRtl ? 'رمز الفاتورة الإلكترونية المعتمد (ZATCA)' : 'ZATCA E-Invoice QR Code', WIDTH / 2, y + qSize + 42);
+
+    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(isRtl ? 'فاتورة ضريبية مبسطة معتمدة' : 'Verified Simplified Tax Invoice', WIDTH / 2, y + qSize + 64);
+    ctx.restore();
+
+    y += qrCardH + 20;
   }
 
   // Footer notes & quotation terms
@@ -1268,7 +1509,7 @@ async function generateMobilePhoneInvoicePdf(
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = 'center';
     ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#475569';
     if (profile.invoiceFooterNote) {
       ctx.fillText(profile.invoiceFooterNote, WIDTH / 2, y);
       y += 24;
@@ -1282,8 +1523,8 @@ async function generateMobilePhoneInvoicePdf(
 
   // System branding footer
   ctx.save();
-  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = '#94a3b8';
+  ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.fillStyle = '#64748b';
   ctx.textAlign = 'center';
   ctx.fillText(
     isRtl ? 'تم إصدار الوثيقة آلياً عبر نظام الدفتر الذكي (The Smart Dafter)' : 'Issued electronically via The Smart Dafter',
@@ -1311,6 +1552,10 @@ async function generateMobilePhoneInvoicePdf(
   return doc;
 }
 
+// ============================================================================
+// A4 Sheet Standard Invoice Generator
+// ============================================================================
+
 export async function generateInvoicePdf(
   options: GenerateInvoicePdfOptions
 ): Promise<jsPDF> {
@@ -1324,7 +1569,6 @@ export async function generateInvoicePdf(
   const { profile, transaction, party, zatcaQrDataUrl, isVatApplied = false, lang = 'ar' } = options;
   const isRtl = lang === 'ar';
   const currency = profile.currency || 'SAR';
-
   const naming = getDocumentNaming(transaction.type, lang, isVatApplied);
   const docTitle = naming.title;
 
@@ -1344,11 +1588,10 @@ export async function generateInvoicePdf(
     try {
       await document.fonts.ready;
     } catch {
-      // Ignore font readiness timeout
+      // Font readiness fallback
     }
   }
 
-  // Pre-load QR Code & Logo Images
   const qrImg = zatcaQrDataUrl ? await loadImage(zatcaQrDataUrl) : null;
   const logoImg = profile.logoBase64 ? await loadImage(profile.logoBase64) : null;
 
@@ -1357,25 +1600,23 @@ export async function generateInvoicePdf(
 
   let currentY = 55;
 
-  // 1. Header Banner - Big high-legibility fonts for smartphones
+  // Header Banner
   ctx.save();
-  let textStartX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
+  let textStartX = isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X;
 
-  // Draw Logo if present
   if (logoImg) {
     const logoSize = 88;
-    const logoX = isRtl ? PAGE_WIDTH - MARGIN_X - logoSize : MARGIN_X;
-    ctx.drawImage(logoImg, logoX, currentY, logoSize, logoSize);
-    textStartX = isRtl ? PAGE_WIDTH - MARGIN_X - logoSize - 20 : MARGIN_X + logoSize + 20;
+    const logoX = isRtl ? A4_WIDTH - A4_MARGIN_X - logoSize : A4_MARGIN_X;
+    drawRoundedRect(ctx, logoX, currentY, logoSize, logoSize, 10, '#ffffff', '#e2e8f0', 1);
+    ctx.drawImage(logoImg, logoX + 4, currentY + 4, logoSize - 8, logoSize - 8);
+    textStartX = isRtl ? A4_WIDTH - A4_MARGIN_X - logoSize - 22 : A4_MARGIN_X + logoSize + 22;
   }
 
-  // Business Name (Enlarged for phone visibility)
   ctx.font = 'bold 32px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = isRtl ? 'right' : 'left';
   ctx.fillText(profile.name, textStartX, currentY + 34);
 
-  // Business Subtitle & Tax Number
   ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#475569';
   let bSubY = currentY + 62;
@@ -1387,48 +1628,46 @@ export async function generateInvoicePdf(
     ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, textStartX, bSubY);
   }
 
-  // Opposite side: Doc Title Badge & Reference
-  const badgeW = 250;
+  // Document Badge
+  const badgeW = 260;
   const badgeH = 50;
-  const badgeX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - badgeW;
-  const badgeFill = naming.color || '#0f172a';
-  drawRoundedRect(ctx, badgeX, currentY, badgeW, badgeH, 8, badgeFill);
+  const badgeX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X - badgeW;
+  drawRoundedRect(ctx, badgeX, currentY, badgeW, badgeH, 8, naming.color || '#0f172a');
 
   ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
   ctx.fillText(docTitle, badgeX + badgeW / 2, currentY + 32);
 
-  // Invoice Number & Date (Bolder & larger font)
-  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", monospace';
+  // Number & Date
+  ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", monospace';
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = isRtl ? 'left' : 'right';
-  const metaX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X;
+  const metaX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X;
   ctx.fillText(`#${transaction.receiptNumber}`, metaX, currentY + 80);
 
-  ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+  ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(formatDate(transaction.date, lang), metaX, currentY + 104);
+  ctx.fillText(formatPdfDate(transaction.date, lang), metaX, currentY + 104);
   ctx.restore();
 
   currentY += 135;
 
   // Divider line
-  ctx.strokeStyle = '#cbd5e1';
+  ctx.strokeStyle = '#e2e8f0';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(MARGIN_X, currentY);
-  ctx.lineTo(PAGE_WIDTH - MARGIN_X, currentY);
+  ctx.moveTo(A4_MARGIN_X, currentY);
+  ctx.lineTo(A4_WIDTH - A4_MARGIN_X, currentY);
   ctx.stroke();
 
-  currentY += 20;
+  currentY += 22;
 
-  // 2. Party & Transaction Details Cards
-  const cardW = (CONTENT_WIDTH - 20) / 2;
+  // Party Details Cards
+  const cardW = (A4_CONTENT_WIDTH - 20) / 2;
   const cardH = 104;
 
-  // Bill To / Supplier Card
-  const partyCardX = isRtl ? PAGE_WIDTH - MARGIN_X - cardW : MARGIN_X;
+  const partyCardX = isRtl ? A4_WIDTH - A4_MARGIN_X - cardW : A4_MARGIN_X;
   drawRoundedRect(ctx, partyCardX, currentY, cardW, cardH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
   ctx.save();
@@ -1449,8 +1688,8 @@ export async function generateInvoicePdf(
   ctx.fillText(party.phone || '-', pTextX, currentY + 86);
   ctx.restore();
 
-  // Invoice Details Card
-  const metaCardX = isRtl ? MARGIN_X : MARGIN_X + cardW + 20;
+  // Transaction Details Card
+  const metaCardX = isRtl ? A4_MARGIN_X : A4_MARGIN_X + cardW + 20;
   drawRoundedRect(ctx, metaCardX, currentY, cardW, cardH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
   ctx.save();
@@ -1479,81 +1718,92 @@ export async function generateInvoicePdf(
 
   currentY += cardH + 25;
 
-  // 3. Line Items Table (For Sale & Supply)
+  // Line Items Table
   const items = transaction.items || [];
-  const totalItemTypes = items.length;
   const totalUnitsSold = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
 
   if (items.length > 0) {
-    const itemCols = [
-      { key: 'index', width: 60, title: '#' },
-      { key: 'name', width: 480, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description' },
-      { key: 'qty', width: 170, title: isRtl ? 'الكمية' : 'Quantity' },
-      { key: 'price', width: 180, title: isRtl ? 'سعر الوحدة' : 'Unit Price' },
-      { key: 'total', width: 230, title: isRtl ? 'الإجمالي' : 'Total' },
+    // Total = 1120px
+    const a4Cols: ColumnDef[] = [
+      { key: 'index', width: 60, title: '#', align: 'center' },
+      { key: 'name', width: 480, title: isRtl ? 'اسم الصنف / البضاعة' : 'Item Description', align: isRtl ? 'right' : 'left' },
+      { key: 'qty', width: 160, title: isRtl ? 'الكمية' : 'Quantity', align: 'center' },
+      { key: 'price', width: 200, title: isRtl ? 'سعر الوحدة' : 'Unit Price', align: 'center' },
+      { key: 'total', width: 220, title: isRtl ? 'الإجمالي' : 'Total', align: 'center' },
     ];
 
-    // Table Header (Enlarged 16px font)
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 44, 6, '#1e293b');
+    const computedCols = computeColumnBounds(a4Cols, A4_MARGIN_X, A4_CONTENT_WIDTH, isRtl);
+
+    drawRoundedRect(ctx, A4_MARGIN_X, currentY, A4_CONTENT_WIDTH, 44, 6, '#1e293b');
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#ffffff';
 
-    let hX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
-    for (const col of itemCols) {
-      if (isRtl) {
-        ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'right' : 'left';
-        const cX = ctx.textAlign === 'right' ? hX - 14 : hX - col.width + 14;
-        ctx.fillText(col.title, cX, currentY + 28);
-        hX -= col.width;
+    for (const col of computedCols) {
+      if (col.align === 'center') {
+        ctx.textAlign = 'center';
+        ctx.fillText(col.title, col.center, currentY + 28);
+      } else if (col.align === 'right') {
+        ctx.textAlign = 'right';
+        ctx.fillText(col.title, col.right - 14, currentY + 28);
       } else {
-        ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'left' : 'right';
-        const cX = ctx.textAlign === 'left' ? hX + 14 : hX + col.width - 14;
-        ctx.fillText(col.title, cX, currentY + 28);
-        hX += col.width;
+        ctx.textAlign = 'left';
+        ctx.fillText(col.title, col.left + 14, currentY + 28);
       }
     }
     ctx.restore();
     currentY += 44;
 
-    // Table Rows (Enhanced 16px font & 42px row height for instant phone readability)
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const rY = currentY;
 
       if (i % 2 === 1) {
         ctx.fillStyle = '#f8fafc';
-        ctx.fillRect(MARGIN_X, rY, CONTENT_WIDTH, 42);
+        ctx.fillRect(A4_MARGIN_X, rY, A4_CONTENT_WIDTH, 42);
       }
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 1;
-      ctx.strokeRect(MARGIN_X, rY, CONTENT_WIDTH, 42);
+      ctx.strokeRect(A4_MARGIN_X, rY, A4_CONTENT_WIDTH, 42);
 
       ctx.save();
       ctx.direction = isRtl ? 'rtl' : 'ltr';
-      ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#1e293b';
 
-      let rowX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
-      for (const col of itemCols) {
+      for (const col of computedCols) {
         let text = '';
-        if (col.key === 'index') text = String(i + 1);
-        else if (col.key === 'name') text = fitText(ctx, item.name, col.width - 24);
-        else if (col.key === 'qty') text = String(item.quantity);
-        else if (col.key === 'price') text = formatCurrency(item.unitPrice, currency, lang);
-        else if (col.key === 'total') text = formatCurrency(item.subtotal, currency, lang);
+        let fontStr = '15px Cairo, Tahoma, "Segoe UI", sans-serif';
+        let clr = '#1e293b';
 
-        if (isRtl) {
-          ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'right' : 'left';
-          const cX = ctx.textAlign === 'right' ? rowX - 14 : rowX - col.width + 14;
-          ctx.fillText(text, cX, rY + 27);
-          rowX -= col.width;
+        if (col.key === 'index') {
+          text = String(i + 1);
+          clr = '#64748b';
+        } else if (col.key === 'name') {
+          text = fitText(ctx, item.name, col.width - 24);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+        } else if (col.key === 'qty') {
+          text = String(item.quantity);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", monospace';
+        } else if (col.key === 'price') {
+          text = formatCurrency(item.unitPrice, currency, lang);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+        } else if (col.key === 'total') {
+          text = formatCurrency(item.subtotal, currency, lang);
+          fontStr = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+        }
+
+        ctx.font = fontStr;
+        ctx.fillStyle = clr;
+
+        if (col.align === 'center') {
+          ctx.textAlign = 'center';
+          ctx.fillText(text, col.center, rY + 27);
+        } else if (col.align === 'right') {
+          ctx.textAlign = 'right';
+          ctx.fillText(text, col.right - 14, rY + 27);
         } else {
-          ctx.textAlign = col.key === 'name' || col.key === 'index' ? 'left' : 'right';
-          const cX = ctx.textAlign === 'left' ? rowX + 14 : rowX + col.width - 14;
-          ctx.fillText(text, cX, rY + 27);
-          rowX += col.width;
+          ctx.textAlign = 'left';
+          ctx.fillText(text, col.left + 14, rY + 27);
         }
       }
       ctx.restore();
@@ -1561,114 +1811,106 @@ export async function generateInvoicePdf(
     }
     currentY += 15;
   } else {
-    // Payment Receipt / Voucher Highlight Box
+    // Payment Receipt / Voucher
     const payH = 110;
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, payH, 10, '#f8fafc', '#cbd5e1', 1.2);
-
+    drawRoundedRect(ctx, A4_MARGIN_X, currentY, A4_CONTENT_WIDTH, payH, 10, '#f8fafc', '#cbd5e1', 1.2);
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = 'center';
 
     ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#64748b';
-    ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', PAGE_WIDTH / 2, currentY + 38);
+    ctx.fillText(isRtl ? 'المبلغ المستلم / المدفوع:' : 'Voucher Amount:', A4_WIDTH / 2, currentY + 38);
 
     ctx.font = 'bold 36px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = transaction.type === 'PAYMENT_RECEIVED' ? '#047857' : '#b91c1c';
     ctx.fillText(
       formatCurrency(transaction.paidAmount || transaction.totalAmount, currency, lang),
-      PAGE_WIDTH / 2,
+      A4_WIDTH / 2,
       currentY + 84
     );
     ctx.restore();
-
     currentY += payH + 20;
   }
 
   currentY += 15;
 
-  // 4. Financial Summary Breakdown & ZATCA QR Code Block
-  // Clean unified 5-row summary: Qty Sold, Subtotal, Discount, VAT (only if inclusive), Total
+  // Financial Breakdown Box & ZATCA QR Code Block
   const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
-  const rowsCount = 3 + (isVatInclusive ? 1 : 0) + (transaction.paidAmount > 0 ? 1 : 0) + (transaction.totalAmount > transaction.paidAmount ? 1 : 0);
-  const summaryBoxH = Math.max(220, 36 + rowsCount * 32 + 20);
-  const summaryBoxW = 500;
+  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
+  const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
+
+  const summaryBoxW = 540;
   const qrBoxW = 340;
   const sumY = currentY;
 
-  // Financial Breakdown Box (Enhanced typography)
-  const sumBoxX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - summaryBoxW;
+  interface A4SummaryRow {
+    label: string;
+    value: string;
+    isBold?: boolean;
+    isDivider?: boolean;
+    color?: string;
+  }
+
+  const a4SummaryRows: A4SummaryRow[] = [];
+  if (totalUnitsSold > 0) {
+    a4SummaryRows.push({ label: isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:', value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`, color: '#047857' });
+  }
+  a4SummaryRows.push({ label: isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', value: formatCurrency(subtotal, currency, lang) });
+  if (transaction.discountAmount && transaction.discountAmount > 0) {
+    a4SummaryRows.push({ label: isRtl ? 'الخصم / التخفيض:' : 'Discount:', value: `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, color: '#b91c1c' });
+  }
+  if (isVatInclusive) {
+    a4SummaryRows.push({ label: `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`, value: `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}` });
+  }
+  a4SummaryRows.push({ label: '', value: '', isDivider: true });
+  a4SummaryRows.push({ label: isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:', value: formatCurrency(transaction.totalAmount, currency, lang), isBold: true, color: '#0f172a' });
+  if (transaction.paidAmount > 0) {
+    a4SummaryRows.push({ label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:', value: formatCurrency(transaction.paidAmount, currency, lang), color: '#047857' });
+  }
+  if (remaining > 0) {
+    a4SummaryRows.push({ label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', value: formatCurrency(remaining, currency, lang), isBold: true, color: '#b91c1c' });
+  }
+
+  let summaryBoxH = 36;
+  for (const r of a4SummaryRows) {
+    summaryBoxH += r.isDivider ? 20 : (r.isBold ? 40 : 32);
+  }
+  summaryBoxH += 12;
+
+  const sumBoxX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X - summaryBoxW;
   drawRoundedRect(ctx, sumBoxX, sumY, summaryBoxW, summaryBoxH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
-  ctx.save();
-  ctx.direction = isRtl ? 'rtl' : 'ltr';
-  let lineY = sumY + 32;
+  let curLineY = sumY + 32;
+  for (const r of a4SummaryRows) {
+    if (r.isDivider) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(sumBoxX + 16, curLineY - 4);
+      ctx.lineTo(sumBoxX + summaryBoxW - 16, curLineY - 4);
+      ctx.stroke();
+      curLineY += 20;
+      continue;
+    }
 
-  const drawSummaryLine = (label: string, value: string, isBold = false, color = '#1e293b') => {
-    ctx.font = isBold
-      ? 'bold 17px Cairo, Tahoma, "Segoe UI", sans-serif'
-      : 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = color;
+    ctx.save();
+    ctx.direction = isRtl ? 'rtl' : 'ltr';
+    ctx.font = r.isBold ? 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif' : 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = r.color || '#1e293b';
 
-    // Label
     ctx.textAlign = isRtl ? 'right' : 'left';
-    const lX = isRtl ? sumBoxX + summaryBoxW - 22 : sumBoxX + 22;
-    ctx.fillText(label, lX, lineY);
+    ctx.fillText(r.label, isRtl ? sumBoxX + summaryBoxW - 22 : sumBoxX + 22, curLineY);
 
-    // Value
     ctx.textAlign = isRtl ? 'left' : 'right';
-    const vX = isRtl ? sumBoxX + 22 : sumBoxX + summaryBoxW - 22;
-    ctx.fillText(value, vX, lineY);
+    ctx.fillText(r.value, isRtl ? sumBoxX + 22 : sumBoxX + summaryBoxW - 22, curLineY);
+    ctx.restore();
 
-    lineY += 30;
-  };
-
-  // Row 1: Quantity Sold
-  if (totalUnitsSold > 0) {
-    drawSummaryLine(isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:', `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`, false, '#047857');
+    curLineY += r.isBold ? 40 : 32;
   }
 
-  // Row 2: Subtotal
-  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
-  drawSummaryLine(isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
-
-  // Row 3: Discount
-  if (transaction.discountAmount && transaction.discountAmount > 0) {
-    drawSummaryLine(isRtl ? 'الخصم / الحسم:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
-  }
-
-  // Row 4: VAT (ONLY IF INVOICE IS VAT INCLUSIVE / VAT APPLIED)
-  if (isVatInclusive) {
-    drawSummaryLine(
-      `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
-      `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`
-    );
-  }
-
-  // Grand Total Divider
-  ctx.strokeStyle = '#cbd5e1';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(sumBoxX + 15, lineY - 14);
-  ctx.lineTo(sumBoxX + summaryBoxW - 15, lineY - 14);
-  ctx.stroke();
-
-  // Row 5: Total
-  drawSummaryLine(isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
-
-  // Paid Now & Remaining
-  if (transaction.paidAmount > 0) {
-    drawSummaryLine(isRtl ? 'المدفوع نقداً:' : 'Paid Now:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
-  }
-
-  const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
-  if (remaining > 0) {
-    drawSummaryLine(isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', formatCurrency(remaining, currency, lang), true, '#b91c1c');
-  }
-  ctx.restore();
-
-  // ZATCA QR Code Box (Opposite side)
-  const qrBoxX = isRtl ? PAGE_WIDTH - MARGIN_X - qrBoxW : MARGIN_X;
+  // ZATCA QR Code Box
+  const qrBoxX = isRtl ? A4_WIDTH - A4_MARGIN_X - qrBoxW : A4_MARGIN_X;
   drawRoundedRect(ctx, qrBoxX, sumY, qrBoxW, summaryBoxH, 10, '#ffffff', '#cbd5e1', 1.2);
 
   ctx.save();
@@ -1677,18 +1919,26 @@ export async function generateInvoicePdf(
 
   if (qrImg) {
     const qrSize = 145;
-    ctx.drawImage(qrImg, qrBoxX + (qrBoxW - qrSize) / 2, sumY + 18, qrSize, qrSize);
+    ctx.drawImage(qrImg, qrBoxX + (qrBoxW - qrSize) / 2, sumY + 20, qrSize, qrSize);
 
-    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#475569';
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#1e293b';
     ctx.fillText(
-      isRtl ? 'رمز الفوترة الإلكترونية (ZATCA)' : 'ZATCA E-Invoice QR Code',
+      isRtl ? 'رمز الفاتورة الإلكترونية (ZATCA)' : 'ZATCA E-Invoice QR Code',
       qrBoxX + qrBoxW / 2,
-      sumY + 192
+      sumY + 195
+    );
+
+    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(
+      isRtl ? 'فاتورة ضريبية مبسطة معتمدة' : 'Verified Simplified Tax Invoice',
+      qrBoxX + qrBoxW / 2,
+      sumY + 218
     );
   } else {
     ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = '#64748b';
     ctx.fillText(
       isRtl ? 'الدفتر الذكي' : 'The Smart Dafter',
       qrBoxX + qrBoxW / 2,
@@ -1703,14 +1953,14 @@ export async function generateInvoicePdf(
   }
   ctx.restore();
 
-  // 5. Bank Info & Footer Notes
-  currentY = sumY + 235;
+  // Bank Info & Footer Notes
+  currentY = sumY + summaryBoxH + 25;
 
   if (profile.iban || profile.invoiceFooterNote) {
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = isRtl ? 'right' : 'left';
-    const noteX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
+    const noteX = isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X;
 
     if (profile.iban) {
       ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
@@ -1744,11 +1994,10 @@ export async function generateInvoicePdf(
   }
 
   // Draw Page Footer
-  drawFooter(ctx, 1, 1, isRtl);
+  drawA4Footer(ctx, 1, 1, isRtl);
 
   const imgData = canvas.toDataURL('image/jpeg', 0.95);
   doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
-  // Immediately release memory buffers
   canvas.width = 0;
   canvas.height = 0;
 
@@ -1756,7 +2005,7 @@ export async function generateInvoicePdf(
 }
 
 // ============================================================================
-// Universal PDF Share & Download Manager (Web Share API + File Fallback)
+// Universal PDF Share & Download Manager
 // ============================================================================
 
 export async function shareOrDownloadPdf(
@@ -1779,7 +2028,7 @@ export async function shareOrDownloadPdf(
 
     const file = new File([blob], safeFileName, { type: 'application/pdf' });
 
-    // 1. Native Web Share API (iOS Safari, Android Chrome, Samsung Internet)
+    // 1. Native Web Share API
     const canShare =
       typeof navigator !== 'undefined' &&
       typeof navigator.canShare === 'function' &&
@@ -1790,9 +2039,6 @@ export async function shareOrDownloadPdf(
       let shareFailed = false;
       let userAborted = false;
       try {
-        // Hand off to OS share sheet.
-        // WebKit on iOS and some Android WebViews fail to settle the navigator.share promise when returning from external apps like WhatsApp.
-        // We race with a fast 2000ms timeout so the JavaScript event loop never blocks or deadlocks waiting for OS completion.
         const sharePromise = navigator.share({
           title,
           text: title,
@@ -1822,7 +2068,7 @@ export async function shareOrDownloadPdf(
       }
     }
 
-    // 2. Direct anchor download fallback - ONLY invoked when Web Share is NOT supported
+    // 2. Direct anchor download fallback
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1839,7 +2085,6 @@ export async function shareOrDownloadPdf(
   }
 }
 
-// Retained for backward-compatibility with tests / interfaces
 export async function exportElementToPdf(
   elementId: string,
   fileName = 'document.pdf',
