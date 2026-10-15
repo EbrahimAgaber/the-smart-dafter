@@ -136,6 +136,25 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
     };
   }, [transaction, isRtl]);
 
+  // Invoice summary metric calculations
+  const totalUnitsSold = useMemo(() => {
+    return (transaction.items || []).reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
+  }, [transaction.items]);
+
+  const itemsSubtotal = useMemo(() => {
+    if (transaction.items && transaction.items.length > 0) {
+      return Math.round(transaction.items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) * 100) / 100;
+    }
+    return transaction.subtotalBeforeTax ?? transaction.totalAmount;
+  }, [transaction]);
+
+  // Check if invoice is VAT inclusive / has VAT applied
+  const hasVat = Boolean(
+    transaction.taxAmount !== undefined &&
+    transaction.taxAmount > 0 &&
+    (transaction.taxRate ?? 0) > 0
+  );
+
   // Automated File Integrity Checker: validates presence, structure, header (%PDF-), and local memory cache
   const runAutomatedIntegrityCheck = async (providedBlob?: Blob): Promise<{ success: boolean; blob: Blob | null; result?: PdfIntegrityResult }> => {
     setIntegrityStatus('checking');
@@ -760,95 +779,89 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                     </tbody>
                   </table>
                 </div>
-
-                {/* Items Sold Summary Table (جدول ملخص الكميات والأصناف المباعة) */}
-                <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="p-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs">📊</span>
-                      <span className="font-bold text-sm text-emerald-950">
-                        {isRtl ? 'ملخص الأصناف والكميات المباعة' : 'Items Sold Summary'}
-                      </span>
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold font-mono text-xs border border-emerald-200">
-                      {transaction.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} {isRtl ? 'قطعة مباعة' : 'Units Sold'}
-                    </span>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-start border-collapse text-xs">
-                      <thead>
-                        <tr className="border-b border-emerald-200 text-emerald-800">
-                          <th className="py-2 text-start font-bold">#</th>
-                          <th className="py-2 text-start font-bold">{isRtl ? 'اسم الصنف' : 'Item Name'}</th>
-                          <th className="py-2 text-center font-bold">{isRtl ? 'الكمية المباعة' : 'Units Sold'}</th>
-                          <th className="py-2 text-center font-bold">{isRtl ? 'نسبة المبيعات' : '% Ratio'}</th>
-                          <th className="py-2 text-end font-bold">{isRtl ? 'القيمة الإجمالية' : 'Total'}</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-emerald-100 text-stone-800">
-                        {(() => {
-                          const totalUnits = transaction.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0);
-                          return transaction.items.map((item, idx) => {
-                            const ratio = totalUnits > 0 ? ((Number(item.quantity) / totalUnits) * 100).toFixed(0) : '0';
-                            return (
-                              <tr key={idx} className="hover:bg-emerald-50/50">
-                                <td className="py-2 font-mono text-stone-400">{idx + 1}</td>
-                                <td className="py-2 font-semibold text-stone-900">{item.name}</td>
-                                <td className="py-2 text-center font-mono font-bold text-emerald-700">
-                                  {item.quantity} {isRtl ? 'قطعة' : 'units'}
-                                </td>
-                                <td className="py-2 text-center font-mono text-stone-600">{ratio}%</td>
-                                <td className="py-2 text-end font-mono font-bold text-stone-900">
-                                  {formatCurrency(item.subtotal, currency, lang)}
-                                </td>
-                              </tr>
-                            );
-                          });
-                        })()}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs font-bold text-emerald-900">
-                    <span>{isRtl ? 'إجمالي عدد القطع المباعة في الفاتورة:' : 'Total Units Sold:'}</span>
-                    <span className="font-mono text-sm text-emerald-800">
-                      {transaction.items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} {isRtl ? 'قطعة' : 'Units'}
-                    </span>
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* Payment & Ledger Balance Breakdown */}
-            <div className="bg-stone-50 p-4 rounded-xl border border-stone-200 space-y-2 ms-auto max-w-sm">
-              {transaction.discountAmount !== undefined && transaction.discountAmount > 0 && (
-                <div className="flex items-center justify-between text-xs text-stone-600">
-                  <span>{isRtl ? 'الخصم / الحسم:' : 'Discount:'}</span>
-                  <span className="font-mono font-bold text-rose-600">
-                    -{formatCurrency(transaction.discountAmount, currency, lang)}
+            {/* Simple Unified Financial Summary (ملخص الفاتورة الموحد والبسيط) */}
+            <div className="bg-stone-50/90 p-4 sm:p-5 rounded-2xl border border-stone-200/90 space-y-2.5 ms-auto max-w-sm sm:max-w-md w-full shadow-2xs">
+              <div className="flex items-center justify-between pb-1.5 border-b border-stone-200 text-xs font-bold text-stone-500 uppercase tracking-wider">
+                <span>{isRtl ? 'ملخص الفاتورة' : 'Invoice Summary'}</span>
+                <span className="font-mono text-stone-400">#{transaction.receiptNumber}</span>
+              </div>
+
+              {/* Row 1: Quantity Sold (الكمية المباعة) */}
+              {totalUnitsSold > 0 && (
+                <div className="flex items-center justify-between text-xs sm:text-sm text-stone-700">
+                  <span className="font-medium">{isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:'}</span>
+                  <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/60">
+                    {totalUnitsSold} {isRtl ? 'قطعة' : 'Units'}
                   </span>
                 </div>
               )}
 
-              {transaction.taxAmount !== undefined && transaction.taxAmount > 0 && (
-                <div className="flex items-center justify-between text-xs text-stone-600">
-                  <span>{isRtl ? `ضريبة القيمة المضافة (${transaction.taxRate || 15}%):` : `VAT (${transaction.taxRate || 15}%):`}</span>
+              {/* Row 2: Sub Total (المجموع الفرعي) */}
+              <div className="flex items-center justify-between text-xs sm:text-sm text-stone-700">
+                <span className="font-medium">{isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:'}</span>
+                <span className="font-mono font-bold text-stone-900">
+                  {formatCurrency(itemsSubtotal, currency, lang)}
+                </span>
+              </div>
+
+              {/* Row 3: Discount (الخصم / الحسم) - User can add / edit discount */}
+              <div className="flex items-center justify-between text-xs sm:text-sm text-stone-700">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{isRtl ? 'الخصم / الحسم:' : 'Discount:'}</span>
+                  {modificationStatus.allowed && onEditInvoice && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onEditInvoice(transaction);
+                      }}
+                      className="text-[11px] text-cyan-700 hover:text-cyan-800 underline font-bold"
+                      title={isRtl ? 'تعديل أو إضافة خصم على الفاتورة' : 'Add or edit discount'}
+                    >
+                      {transaction.discountAmount && transaction.discountAmount > 0
+                        ? (isRtl ? 'تعديل الخصم' : 'Edit')
+                        : (isRtl ? '+ إضافة خصم' : '+ Add Discount')}
+                    </button>
+                  )}
+                </div>
+                <span className={`font-mono font-bold ${transaction.discountAmount && transaction.discountAmount > 0 ? 'text-rose-600' : 'text-stone-400'}`}>
+                  {transaction.discountAmount && transaction.discountAmount > 0
+                    ? `-${formatCurrency(transaction.discountAmount, currency, lang)}`
+                    : formatCurrency(0, currency, lang)}
+                </span>
+              </div>
+
+              {/* Row 4: VAT (ضريبة القيمة المضافة) - ONLY appears if invoice is VAT inclusive / taxAmount > 0 */}
+              {hasVat && (
+                <div className="flex items-center justify-between text-xs sm:text-sm text-stone-700">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium">
+                      {isRtl ? `ضريبة القيمة المضافة (${transaction.taxRate || 15}%):` : `VAT (${transaction.taxRate || 15}%):`}
+                    </span>
+                    <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded font-bold">
+                      {isRtl ? 'شامل' : 'Inclusive'}
+                    </span>
+                  </div>
                   <span className="font-mono font-bold text-stone-800">
-                    +{formatCurrency(transaction.taxAmount, currency, lang)}
+                    +{formatCurrency(transaction.taxAmount!, currency, lang)}
                   </span>
                 </div>
               )}
 
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-200 font-bold">
-                <span className="text-stone-700">{t.invoiceTotal}:</span>
-                <span className="font-black font-mono text-stone-900 text-sm">
+              {/* Row 5: Total (الإجمالي النهائي) */}
+              <div className="flex items-center justify-between text-sm sm:text-base pt-2 border-t-2 border-stone-300 font-bold">
+                <span className="text-stone-900 font-black">{t.invoiceTotal}:</span>
+                <span className="font-black font-mono text-cyan-800 text-base sm:text-lg">
                   {formatCurrency(transaction.totalAmount, currency, lang)}
                 </span>
               </div>
 
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-stone-600">{t.paidNow}:</span>
+              {/* Paid Now */}
+              <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-200">
+                <span className="text-stone-600 font-medium">{t.paidNow}:</span>
                 <span className="font-bold font-mono text-cyan-700">
                   {formatCurrency(transaction.paidAmount, currency, lang)}
                 </span>

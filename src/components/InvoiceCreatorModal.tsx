@@ -1689,17 +1689,28 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             id="payment-split-box"
             className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-3 shadow-2xs"
           >
-            {/* Subtotal, Discount & Tax Itemization */}
+            {/* Unified 5-Row Financial Summary (ملخص الفاتورة الموحد والبسيط) */}
             <div className="space-y-2 pb-2.5 border-b border-slate-200 text-xs">
+              {/* Row 1: Quantity Sold (الكمية المباعة) */}
+              {items.length > 0 && (
+                <div className="flex items-center justify-between text-slate-600">
+                  <span className="font-medium">{isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:'}</span>
+                  <span className="font-mono font-bold text-slate-800 bg-slate-200/60 px-2 py-0.5 rounded-md">
+                    {items.reduce((sum, it) => sum + (Number(it.quantity) || 0), 0)} {isRtl ? 'قطعة' : 'Units'}
+                  </span>
+                </div>
+              )}
+
+              {/* Row 2: Items Subtotal (المجموع الفرعي) */}
               <div className="flex items-center justify-between text-slate-600">
-                <span>{isRtl ? 'إجمالي الأصناف:' : 'Items Subtotal:'}</span>
+                <span className="font-medium">{isRtl ? 'المجموع الفرعي للأصناف:' : 'Items Subtotal:'}</span>
                 <span className="font-mono font-bold text-slate-800">
                   {formatCurrency(itemsSubtotal, currency, lang)}
                 </span>
               </div>
 
-              {/* Discount Row */}
-              <div className="space-y-1.5">
+              {/* Row 3: Discount Row with Amount & Percent Chips */}
+              <div className="space-y-1.5 pt-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-slate-600 font-medium">{isRtl ? 'الخصم / الحسم:' : 'Discount:'}</span>
                   <div className="flex items-center gap-1.5">
@@ -1717,14 +1728,14 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                   </div>
                 </div>
 
-                {/* Quick Discount Chips */}
+                {/* Quick Discount Amount and Percentage Chips */}
                 <div className="flex items-center gap-1.5 flex-wrap">
                   {[0, 5, 10, 20, 50].map((disc) => (
                     <button
                       key={disc}
                       type="button"
                       onClick={() => setDiscountInput(disc.toString())}
-                      className={`min-h-[36px] min-w-[36px] px-2.5 py-1 rounded-xl text-xs font-mono font-bold border transition-colors flex items-center justify-center ${
+                      className={`min-h-[34px] min-w-[34px] px-2 py-0.5 rounded-xl text-xs font-mono font-bold border transition-colors flex items-center justify-center ${
                         parseFloat(discountInput) === disc
                           ? 'bg-cyan-100 text-cyan-900 border-cyan-400 shadow-2xs'
                           : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
@@ -1733,26 +1744,48 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                       {disc === 0 ? (isRtl ? 'صفر' : '0') : `-${disc}`}
                     </button>
                   ))}
+
+                  {/* Quick percentage discount chips */}
+                  {[5, 10, 15, 20].map((pct) => {
+                    const calcVal = Math.round(itemsSubtotal * (pct / 100) * 100) / 100;
+                    return (
+                      <button
+                        key={`pct-${pct}`}
+                        type="button"
+                        onClick={() => setDiscountInput(calcVal.toString())}
+                        title={`${pct}% = ${calcVal} ${currency}`}
+                        className={`min-h-[34px] px-2 py-0.5 rounded-xl text-[11px] font-mono font-bold border transition-colors flex items-center justify-center ${
+                          parseFloat(discountInput) === calcVal && calcVal > 0
+                            ? 'bg-emerald-100 text-emerald-900 border-emerald-400 shadow-2xs'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200 shadow-2xs'
+                        }`}
+                      >
+                        %{pct}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* VAT Row */}
-              <div className="flex items-center justify-between pt-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-600">
-                    {isRtl ? `ضريبة القيمة المضافة (${taxRate}%):` : `VAT (${taxRate}%):`}
-                  </span>
-                  <span className="text-[10px] font-bold text-slate-500">
-                    {applyVat ? (isRtl ? 'مطبقة' : 'Active') : (isRtl ? 'معفي' : 'Exempt')}
+              {/* Row 4: VAT Row - ONLY appears if invoice is VAT inclusive / taxAmount > 0 */}
+              {applyVat && taxAmount > 0 && (
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-600 font-medium">
+                      {isRtl ? `ضريبة القيمة المضافة (${taxRate}%):` : `VAT (${taxRate}%):`}
+                    </span>
+                    <span className="text-[10px] bg-cyan-100 text-cyan-800 px-1.5 py-0.2 rounded font-bold">
+                      {isRtl ? 'شامل' : 'Inclusive'}
+                    </span>
+                  </div>
+                  <span className="font-mono font-bold text-slate-800">
+                    +{formatCurrency(taxAmount, currency, lang)}
                   </span>
                 </div>
-                <span className="font-mono font-bold text-slate-800">
-                  {formatCurrency(taxAmount, currency, lang)}
-                </span>
-              </div>
+              )}
             </div>
 
-            {/* Grand Total */}
+            {/* Row 5: Final Grand Total */}
             <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200">
               <span className="font-black text-slate-900 text-sm">
                 {isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:'}

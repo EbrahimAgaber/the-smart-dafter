@@ -696,10 +696,10 @@ async function generateThermal80mmInvoicePdf(
   const C_WIDTH = WIDTH - PADDING * 2;
 
   // Estimate total canvas height
-  const baseH = 880;
+  const baseH = 740;
   const itemsH = items.length * 44;
-  const summaryH = items.length > 0 ? (items.length * 32 + 110) : 0;
-  const canvasHeight = Math.max(920, baseH + itemsH + summaryH);
+  const summaryH = 220;
+  const canvasHeight = Math.max(880, baseH + itemsH + summaryH);
   if (typeof document === 'undefined') {
     const fallbackDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [80, 200] });
     fallbackDoc.text(`Thermal Invoice: ${transaction.receiptNumber}`, 5, 10);
@@ -828,60 +828,15 @@ async function generateThermal80mmInvoicePdf(
     }
 
     y += 14;
-
-    // SUMMARY TABLE: How many items sold (ملخص الأصناف والكميات المباعة)
-    const sumBoxH = 40 + items.length * 28 + 36;
-    drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumBoxH, 8, '#f0fdf4', '#86efac', 1.2);
-    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#166534';
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(
-      isRtl
-        ? `📊 ملخص الكميات المباعة: ${totalUnitsSold} قطعة (${totalItemTypes} أصناف)`
-        : `📊 Units Sold Summary: ${totalUnitsSold} Units (${totalItemTypes} Items)`,
-      isRtl ? WIDTH - PADDING - 12 : PADDING + 12,
-      y + 25
-    );
-    y += 36;
-
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const ratio = totalUnitsSold > 0 ? ((Number(it.quantity) / totalUnitsSold) * 100).toFixed(0) : '0';
-      ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#334155';
-      ctx.textAlign = isRtl ? 'right' : 'left';
-      ctx.fillText(`${i + 1}. ${fitText(ctx, it.name, 210)}`, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 18);
-
-      ctx.textAlign = 'center';
-      ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", monospace';
-      ctx.fillStyle = '#15803d';
-      ctx.fillText(`${it.quantity} ${isRtl ? 'قطعة' : 'pcs'} (${ratio}%)`, WIDTH / 2 + 10, y + 18);
-
-      ctx.textAlign = isRtl ? 'left' : 'right';
-      ctx.fillStyle = '#0f172a';
-      ctx.fillText(formatCurrency(it.subtotal, currency, lang), isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 18);
-      y += 28;
-    }
-
-    // Summary Total footer line
-    ctx.strokeStyle = '#86efac';
-    ctx.beginPath();
-    ctx.moveTo(PADDING + 10, y + 4);
-    ctx.lineTo(WIDTH - PADDING - 10, y + 4);
-    ctx.stroke();
-
-    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#14532d';
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(isRtl ? 'إجمالي عدد القطع المباعة:' : 'Total Pieces Sold:', isRtl ? WIDTH - PADDING - 14 : PADDING + 14, y + 22);
-    ctx.textAlign = isRtl ? 'left' : 'right';
-    ctx.fillStyle = '#15803d';
-    ctx.fillText(`${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, y + 22);
-    y += 40;
   }
 
-  // Financial Breakdown Box
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 170, 8, '#f8fafc', '#cbd5e1', 1);
+  // Unified Simple Financial Summary (ملخص الفاتورة البسيط)
+  // Rows: Quantity Sold, Subtotal, Discount, VAT (only if inclusive), Total, plus paid/balance
+  const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
+  const rowsCount = 3 + (isVatInclusive ? 1 : 0) + (transaction.paidAmount > 0 ? 1 : 0) + (transaction.totalAmount > transaction.paidAmount ? 1 : 0);
+  const sumBoxH = 32 + rowsCount * 28 + 14;
+
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumBoxH, 8, '#f8fafc', '#cbd5e1', 1.2);
   let fY = y + 26;
   const drawFinLine = (lbl: string, val: string, isBld = false, clr = '#0f172a') => {
     ctx.font = isBld ? 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif' : '14px Cairo, Tahoma, "Segoe UI", sans-serif';
@@ -890,26 +845,51 @@ async function generateThermal80mmInvoicePdf(
     ctx.fillText(lbl, isRtl ? WIDTH - PADDING - 14 : PADDING + 14, fY);
     ctx.textAlign = isRtl ? 'left' : 'right';
     ctx.fillText(val, isRtl ? PADDING + 14 : WIDTH - PADDING - 14, fY);
-    fY += 26;
+    fY += 28;
   };
 
-  const subtotal = transaction.subtotalBeforeTax ?? transaction.totalAmount;
-  drawFinLine(isRtl ? 'المجموع قبل الضريبة:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+  // Row 1: Quantity Sold
+  if (totalUnitsSold > 0) {
+    drawFinLine(isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:', `${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`, false, '#047857');
+  }
+
+  // Row 2: Subtotal
+  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
+  drawFinLine(isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+
+  // Row 3: Discount
   if (transaction.discountAmount && transaction.discountAmount > 0) {
-    drawFinLine(isRtl ? 'الخصم الممنوح:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+    drawFinLine(isRtl ? 'الخصم / الحسم:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
   }
-  if (isVatApplied && transaction.taxAmount && transaction.taxAmount > 0) {
-    drawFinLine(`${isRtl ? 'الضريبة ' : 'VAT '}(${transaction.taxRate || 15}%):`, formatCurrency(transaction.taxAmount, currency, lang));
+
+  // Row 4: VAT (ONLY IF INVOICE IS VAT INCLUSIVE / VAT APPLIED)
+  if (isVatInclusive) {
+    drawFinLine(
+      `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
+      `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`
+    );
   }
-  drawFinLine(isRtl ? 'الإجمالي النهائي:' : 'Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+
+  // Divider
+  ctx.strokeStyle = '#cbd5e1';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(PADDING + 10, fY - 8);
+  ctx.lineTo(WIDTH - PADDING - 10, fY - 8);
+  ctx.stroke();
+
+  // Row 5: Total
+  drawFinLine(isRtl ? 'الإجمالي الصافي النهائي:' : 'Total Amount:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+
+  // Paid Now & Remaining
   if (transaction.paidAmount > 0) {
-    drawFinLine(isRtl ? 'المدفوع نقداً:' : 'Paid Amount:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
+    drawFinLine(isRtl ? 'المدفوع نقداً:' : 'Paid Now:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
   }
   const rem = Math.max(0, transaction.totalAmount - transaction.paidAmount);
   if (rem > 0) {
     drawFinLine(isRtl ? 'المتبقي بالآجل:' : 'Remaining Debt:', formatCurrency(rem, currency, lang), true, '#b91c1c');
   }
-  y += 185;
+  y += sumBoxH + 16;
 
   // QR Code
   if (qrImg) {
@@ -990,11 +970,11 @@ async function generateMobilePhoneInvoicePdf(
   const C_WIDTH = WIDTH - PADDING * 2; // 664px
 
   // Estimate total canvas height
-  const baseH = 1100;
-  const itemsH = items.length * 50;
-  const summaryH = items.length > 0 ? (items.length * 44 + 160) : 0;
+  const baseH = 920;
+  const itemsH = items.length * 48;
+  const summaryH = 260;
   const qrH = qrImg ? 220 : 100;
-  const canvasHeight = Math.max(1200, baseH + itemsH + summaryH + qrH);
+  const canvasHeight = Math.max(1100, baseH + itemsH + summaryH + qrH);
   if (typeof document === 'undefined') {
     const fallbackDoc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 240] });
     fallbackDoc.text(`Mobile Invoice: ${transaction.receiptNumber}`, 5, 10);
@@ -1176,109 +1156,7 @@ async function generateMobilePhoneInvoicePdf(
       ctx.restore();
       y += 46;
     }
-
-    // 3. Summary Table: Items & Quantities Sold (جدول ملخص الكميات والأصناف المباعة)
-    y += 18;
-    const sumHeaderH = 42;
-    drawRoundedRect(ctx, PADDING, y, C_WIDTH, sumHeaderH, 6, '#0f766e');
-    ctx.save();
-    ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(
-      isRtl
-        ? `📊 ملخص الأصناف والكميات المباعة (إجمالي: ${totalUnitsSold} قطعة في ${totalItemTypes} أصناف)`
-        : `📊 Items Sold Summary (${totalUnitsSold} Units in ${totalItemTypes} Items)`,
-      isRtl ? WIDTH - PADDING - 14 : PADDING + 14,
-      y + 28
-    );
-    ctx.restore();
-    y += sumHeaderH;
-
-    // Summary Subtable Columns
-    const sumCols = [
-      { key: 'idx', width: 44, title: '#' },
-      { key: 'name', width: 280, title: isRtl ? 'اسم الصنف' : 'Item Name' },
-      { key: 'qty', width: 130, title: isRtl ? 'الكمية المباعة' : 'Units Sold' },
-      { key: 'ratio', width: 80, title: isRtl ? 'النسبة' : 'Ratio' },
-      { key: 'subtotal', width: 130, title: isRtl ? 'القيمة' : 'Subtotal' },
-    ];
-
-    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 36, 0, '#f1f5f9', '#cbd5e1', 1);
-    ctx.save();
-    ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#334155';
-    let sColX = isRtl ? WIDTH - PADDING : PADDING;
-    for (const c of sumCols) {
-      if (isRtl) {
-        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
-        const scX = ctx.textAlign === 'right' ? sColX - 8 : sColX - c.width + 8;
-        ctx.fillText(c.title, scX, y + 24);
-        sColX -= c.width;
-      } else {
-        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
-        const scX = ctx.textAlign === 'left' ? sColX + 8 : sColX + c.width - 8;
-        ctx.fillText(c.title, scX, y + 24);
-        sColX += c.width;
-      }
-    }
-    ctx.restore();
-    y += 36;
-
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const ratio = totalUnitsSold > 0 ? ((Number(it.quantity) / totalUnitsSold) * 100).toFixed(0) : '0';
-      ctx.fillStyle = i % 2 === 1 ? '#f8fafc' : '#ffffff';
-      ctx.fillRect(PADDING, y, C_WIDTH, 40);
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(PADDING, y, C_WIDTH, 40);
-
-      ctx.save();
-      ctx.direction = isRtl ? 'rtl' : 'ltr';
-      ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#1e293b';
-
-      let rowX = isRtl ? WIDTH - PADDING : PADDING;
-      for (const c of sumCols) {
-        let text = '';
-        if (c.key === 'idx') text = String(i + 1);
-        else if (c.key === 'name') text = fitText(ctx, it.name, c.width - 16);
-        else if (c.key === 'qty') text = `${it.quantity} ${isRtl ? 'قطعة' : 'units'}`;
-        else if (c.key === 'ratio') text = `${ratio}%`;
-        else if (c.key === 'subtotal') text = formatCurrency(it.subtotal, currency, lang);
-
-        if (isRtl) {
-          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
-          const cX = ctx.textAlign === 'right' ? rowX - 8 : rowX - c.width + 8;
-          ctx.fillText(text, cX, y + 26);
-          rowX -= c.width;
-        } else {
-          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
-          const cX = ctx.textAlign === 'left' ? rowX + 8 : rowX + c.width - 8;
-          ctx.fillText(text, cX, y + 26);
-          rowX += c.width;
-        }
-      }
-      ctx.restore();
-      y += 40;
-    }
-
-    // Summary Highlight Footer Row
-    drawRoundedRect(ctx, PADDING, y, C_WIDTH, 42, 0, '#f0fdf4', '#86efac', 1.2);
-    ctx.save();
-    ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#166534';
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(
-      isRtl ? `إجمالي عدد القطع المباعة: ${totalUnitsSold} قطعة` : `Total Units Sold: ${totalUnitsSold} Units`,
-      isRtl ? WIDTH - PADDING - 14 : PADDING + 14,
-      y + 27
-    );
-    ctx.restore();
-    y += 54;
+    y += 16;
   } else {
     // Payment Receipt / Voucher
     const payH = 110;
@@ -1297,8 +1175,13 @@ async function generateMobilePhoneInvoicePdf(
     y += payH + 20;
   }
 
-  // 4. Financial Totals Card
-  drawRoundedRect(ctx, PADDING, y, C_WIDTH, 230, 10, '#f8fafc', '#cbd5e1', 1.2);
+  // Unified Simple Financial Summary Card (ملخص الفاتورة الموحد والبسيط)
+  // Rows: Quantity Sold, Subtotal, Discount, VAT (only if inclusive), Total, plus paid/remaining
+  const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
+  const rowsCount = 3 + (isVatInclusive ? 1 : 0) + (transaction.paidAmount > 0 ? 1 : 0) + (transaction.totalAmount > transaction.paidAmount ? 1 : 0);
+  const cardH = 34 + rowsCount * 36 + 24;
+
+  drawRoundedRect(ctx, PADDING, y, C_WIDTH, cardH, 10, '#f8fafc', '#cbd5e1', 1.2);
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
   let tY = y + 34;
@@ -1317,40 +1200,52 @@ async function generateMobilePhoneInvoicePdf(
     const vX = isRtl ? PADDING + 20 : WIDTH - PADDING - 20;
     ctx.fillText(value, vX, tY);
 
-    tY += isBig ? 38 : 30;
+    tY += isBig ? 40 : 34;
   };
 
-  const subtotal = transaction.subtotalBeforeTax ?? transaction.totalAmount;
-  drawPhoneTotalLine(isRtl ? 'المجموع قبل الضريبة:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+  // Row 1: Quantity Sold
+  if (totalUnitsSold > 0) {
+    drawPhoneTotalLine(isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:', `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`, false, '#047857');
+  }
 
+  // Row 2: Subtotal
+  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
+  drawPhoneTotalLine(isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+
+  // Row 3: Discount
   if (transaction.discountAmount && transaction.discountAmount > 0) {
-    drawPhoneTotalLine(isRtl ? 'الخصم الممنوح:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+    drawPhoneTotalLine(isRtl ? 'الخصم / الحسم:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
   }
 
-  if (isVatApplied && transaction.taxAmount && transaction.taxAmount > 0) {
-    drawPhoneTotalLine(`${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`, formatCurrency(transaction.taxAmount, currency, lang));
+  // Row 4: VAT (ONLY IF INVOICE IS VAT INCLUSIVE / VAT APPLIED)
+  if (isVatInclusive) {
+    drawPhoneTotalLine(
+      `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
+      `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`
+    );
   }
 
-  // Grand Total Line
+  // Grand Total Divider Line
   ctx.strokeStyle = '#cbd5e1';
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(PADDING + 16, tY - 14);
-  ctx.lineTo(WIDTH - PADDING - 16, tY - 14);
+  ctx.moveTo(PADDING + 16, tY - 12);
+  ctx.lineTo(WIDTH - PADDING - 16, tY - 12);
   ctx.stroke();
 
-  drawPhoneTotalLine(isRtl ? 'الإجمالي النهائي:' : 'Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+  // Row 5: Total
+  drawPhoneTotalLine(isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
 
+  // Paid & Remaining
   if (transaction.paidAmount > 0) {
-    drawPhoneTotalLine(isRtl ? 'المدفوع نقداً:' : 'Paid Amount:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
+    drawPhoneTotalLine(isRtl ? 'المدفوع نقداً:' : 'Paid Now:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
   }
-
   const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
   if (remaining > 0) {
     drawPhoneTotalLine(isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', formatCurrency(remaining, currency, lang), true, '#b91c1c');
   }
   ctx.restore();
-  y += 246;
+  y += cardH + 20;
 
   // 5. ZATCA QR Code (Ultra clear)
   if (qrImg) {
@@ -1664,109 +1559,7 @@ export async function generateInvoicePdf(
       ctx.restore();
       currentY += 42;
     }
-
-    // 3.5. Items Sold Summary Table (جدول ملخص الكميات والأصناف المباعة)
-    currentY += 16;
-
-    const sumHeaderH = 38;
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, sumHeaderH, 6, '#0f766e');
-    ctx.save();
-    ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    const sumHeaderTitle = isRtl
-      ? `📊 ملخص الأصناف والكميات المباعة (إجمالي: ${totalUnitsSold} قطعة / وحدة في ${totalItemTypes} أصناف)`
-      : `📊 Items Sold Summary (${totalUnitsSold} Units Sold across ${totalItemTypes} Varieties)`;
-    ctx.fillText(sumHeaderTitle, isRtl ? PAGE_WIDTH - MARGIN_X - 16 : MARGIN_X + 16, currentY + 24);
-    ctx.restore();
-    currentY += sumHeaderH;
-
-    // Summary Subtable Columns
-    const sumCols = [
-      { key: 'idx', width: 60, title: '#' },
-      { key: 'name', width: 440, title: isRtl ? 'اسم الصنف' : 'Item Name' },
-      { key: 'qty', width: 200, title: isRtl ? 'الكمية المباعة' : 'Units Sold' },
-      { key: 'ratio', width: 180, title: isRtl ? 'نسبة المبيعات' : '% Ratio' },
-      { key: 'subtotal', width: 240, title: isRtl ? 'القيمة الإجمالية' : 'Total Amount' },
-    ];
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 34, 0, '#f1f5f9', '#cbd5e1', 1);
-    ctx.save();
-    ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#334155';
-    let sColX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
-    for (const c of sumCols) {
-      if (isRtl) {
-        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
-        const scX = ctx.textAlign === 'right' ? sColX - 12 : sColX - c.width + 12;
-        ctx.fillText(c.title, scX, currentY + 22);
-        sColX -= c.width;
-      } else {
-        ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
-        const scX = ctx.textAlign === 'left' ? sColX + 12 : sColX + c.width - 12;
-        ctx.fillText(c.title, scX, currentY + 22);
-        sColX += c.width;
-      }
-    }
-    ctx.restore();
-    currentY += 34;
-
-    // Summary Rows
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const rY = currentY;
-      const ratio = totalUnitsSold > 0 ? ((Number(it.quantity) / totalUnitsSold) * 100).toFixed(1) : '0';
-
-      ctx.fillStyle = i % 2 === 1 ? '#f8fafc' : '#ffffff';
-      ctx.fillRect(MARGIN_X, rY, CONTENT_WIDTH, 34);
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.strokeRect(MARGIN_X, rY, CONTENT_WIDTH, 34);
-
-      ctx.save();
-      ctx.direction = isRtl ? 'rtl' : 'ltr';
-      ctx.font = '14px Cairo, Tahoma, "Segoe UI", sans-serif';
-      ctx.fillStyle = '#1e293b';
-
-      let rowX = isRtl ? PAGE_WIDTH - MARGIN_X : MARGIN_X;
-      for (const c of sumCols) {
-        let text = '';
-        if (c.key === 'idx') text = String(i + 1);
-        else if (c.key === 'name') text = fitText(ctx, it.name, c.width - 24);
-        else if (c.key === 'qty') text = `${it.quantity} ${isRtl ? 'قطعة' : 'units'}`;
-        else if (c.key === 'ratio') text = `${ratio}%`;
-        else if (c.key === 'subtotal') text = formatCurrency(it.subtotal, currency, lang);
-
-        if (isRtl) {
-          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'right' : 'left';
-          const cX = ctx.textAlign === 'right' ? rowX - 12 : rowX - c.width + 12;
-          ctx.fillText(text, cX, rY + 22);
-          rowX -= c.width;
-        } else {
-          ctx.textAlign = c.key === 'name' || c.key === 'idx' ? 'left' : 'right';
-          const cX = ctx.textAlign === 'left' ? rowX + 12 : rowX + c.width - 12;
-          ctx.fillText(text, cX, rY + 22);
-          rowX += c.width;
-        }
-      }
-      ctx.restore();
-      currentY += 34;
-    }
-
-    // Summary Total Footer Row
-    drawRoundedRect(ctx, MARGIN_X, currentY, CONTENT_WIDTH, 36, 0, '#f0fdf4', '#86efac', 1.2);
-    ctx.save();
-    ctx.direction = isRtl ? 'rtl' : 'ltr';
-    ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
-    ctx.fillStyle = '#166534';
-    ctx.textAlign = isRtl ? 'right' : 'left';
-    ctx.fillText(
-      isRtl ? `إجمالي عدد القطع المباعة: ${totalUnitsSold} قطعة` : `Total Units Sold: ${totalUnitsSold} Units`,
-      isRtl ? PAGE_WIDTH - MARGIN_X - 16 : MARGIN_X + 16,
-      currentY + 24
-    );
-    ctx.restore();
-    currentY += 46;
+    currentY += 15;
   } else {
     // Payment Receipt / Voucher Highlight Box
     const payH = 110;
@@ -1795,13 +1588,17 @@ export async function generateInvoicePdf(
   currentY += 15;
 
   // 4. Financial Summary Breakdown & ZATCA QR Code Block
+  // Clean unified 5-row summary: Qty Sold, Subtotal, Discount, VAT (only if inclusive), Total
+  const isVatInclusive = Boolean(isVatApplied && transaction.taxAmount && transaction.taxAmount > 0 && (transaction.taxRate ?? 0) > 0);
+  const rowsCount = 3 + (isVatInclusive ? 1 : 0) + (transaction.paidAmount > 0 ? 1 : 0) + (transaction.totalAmount > transaction.paidAmount ? 1 : 0);
+  const summaryBoxH = Math.max(220, 36 + rowsCount * 32 + 20);
   const summaryBoxW = 500;
   const qrBoxW = 340;
   const sumY = currentY;
 
   // Financial Breakdown Box (Enhanced typography)
   const sumBoxX = isRtl ? MARGIN_X : PAGE_WIDTH - MARGIN_X - summaryBoxW;
-  drawRoundedRect(ctx, sumBoxX, sumY, summaryBoxW, 215, 10, '#f8fafc', '#cbd5e1', 1.2);
+  drawRoundedRect(ctx, sumBoxX, sumY, summaryBoxW, summaryBoxH, 10, '#f8fafc', '#cbd5e1', 1.2);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';
@@ -1826,17 +1623,25 @@ export async function generateInvoicePdf(
     lineY += 30;
   };
 
-  const subtotal = transaction.subtotalBeforeTax ?? transaction.totalAmount;
-  drawSummaryLine(isRtl ? 'المجموع قبل الضريبة:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
-
-  if (transaction.discountAmount && transaction.discountAmount > 0) {
-    drawSummaryLine(isRtl ? 'الخصم الممنوح:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+  // Row 1: Quantity Sold
+  if (totalUnitsSold > 0) {
+    drawSummaryLine(isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:', `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`, false, '#047857');
   }
 
-  if (isVatApplied && transaction.taxAmount && transaction.taxAmount > 0) {
+  // Row 2: Subtotal
+  const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
+  drawSummaryLine(isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', formatCurrency(subtotal, currency, lang));
+
+  // Row 3: Discount
+  if (transaction.discountAmount && transaction.discountAmount > 0) {
+    drawSummaryLine(isRtl ? 'الخصم / الحسم:' : 'Discount:', `- ${formatCurrency(transaction.discountAmount, currency, lang)}`, false, '#b91c1c');
+  }
+
+  // Row 4: VAT (ONLY IF INVOICE IS VAT INCLUSIVE / VAT APPLIED)
+  if (isVatInclusive) {
     drawSummaryLine(
       `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`,
-      formatCurrency(transaction.taxAmount, currency, lang)
+      `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}`
     );
   }
 
@@ -1848,10 +1653,12 @@ export async function generateInvoicePdf(
   ctx.lineTo(sumBoxX + summaryBoxW - 15, lineY - 14);
   ctx.stroke();
 
-  drawSummaryLine(isRtl ? 'الإجمالي النهائي:' : 'Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
+  // Row 5: Total
+  drawSummaryLine(isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:', formatCurrency(transaction.totalAmount, currency, lang), true, '#0f172a');
 
+  // Paid Now & Remaining
   if (transaction.paidAmount > 0) {
-    drawSummaryLine(isRtl ? 'المدفوع نقداً:' : 'Paid Amount:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
+    drawSummaryLine(isRtl ? 'المدفوع نقداً:' : 'Paid Now:', formatCurrency(transaction.paidAmount, currency, lang), false, '#047857');
   }
 
   const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
@@ -1862,7 +1669,7 @@ export async function generateInvoicePdf(
 
   // ZATCA QR Code Box (Opposite side)
   const qrBoxX = isRtl ? PAGE_WIDTH - MARGIN_X - qrBoxW : MARGIN_X;
-  drawRoundedRect(ctx, qrBoxX, sumY, qrBoxW, 215, 10, '#ffffff', '#cbd5e1', 1.2);
+  drawRoundedRect(ctx, qrBoxX, sumY, qrBoxW, summaryBoxH, 10, '#ffffff', '#cbd5e1', 1.2);
 
   ctx.save();
   ctx.direction = isRtl ? 'rtl' : 'ltr';

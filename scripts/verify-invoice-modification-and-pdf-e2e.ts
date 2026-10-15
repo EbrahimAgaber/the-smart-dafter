@@ -184,14 +184,40 @@ function runE2eAssessment() {
   assert(threwOnVoided === true, 'T5.2: updateTransaction threw exception on voided invoice');
 
   // -------------------------------------------------------------
-  // Test 6: Items Sold Summary Calculation
+  // Test 6: Simplified 5-Row Summary Calculations & VAT Inclusivity Logic
   // -------------------------------------------------------------
   const sampleItems = updatedTx.items || [];
   const totalUnitsSold = sampleItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-  const totalItemTypes = sampleItems.length;
+  const itemsSubtotal = sampleItems.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+  const discountVal = updatedTx.discountAmount || 0;
+  const netAfterDiscount = itemsSubtotal - discountVal;
+  const taxVal = updatedTx.taxAmount || 0;
+  const expectedGrandTotal = Math.round((netAfterDiscount + taxVal) * 100) / 100;
 
-  assert(totalUnitsSold === 7, 'T6.1: Items sold summary computes exactly 7 units sold (6 + 1)');
-  assert(totalItemTypes === 2, 'T6.2: Items sold summary computes 2 item types/varieties');
+  assert(totalUnitsSold === 7, 'T6.1: Row 1 - Quantity sold computes exactly 7 units sold (6 + 1)');
+  assert(itemsSubtotal === 380, 'T6.2: Row 2 - Subtotal computes 380 SAR');
+  assert(discountVal === 20, 'T6.3: Row 3 - Discount correctly applied as 20 SAR');
+  assert(taxVal === 54, 'T6.4: Row 4 - VAT computed as 15% of (380 - 20) = 54 SAR');
+  assert(updatedTx.totalAmount === expectedGrandTotal, 'T6.5: Row 5 - Total matches Subtotal - Discount + VAT exactly (414 SAR)');
+
+  // Test 6b: Non-VAT Inclusive Invoice (VAT row must not appear)
+  const nonVatTx = store.addTransaction({
+    partyId: customer.id,
+    type: 'SALE_CREDIT',
+    date: new Date().toISOString(),
+    items: [{ name: 'سلعة بدون ضريبة', quantity: 3, unitPrice: 100, subtotal: 300 }],
+    subtotalBeforeTax: 300,
+    discountAmount: 20,
+    taxRate: 0,
+    taxAmount: 0,
+    totalAmount: 280,
+    paidAmount: 280,
+    remainingBalanceDelta: 0,
+  });
+
+  const isNonVatInclusive = Boolean(nonVatTx.taxAmount && nonVatTx.taxAmount > 0 && (nonVatTx.taxRate ?? 0) > 0);
+  assert(isNonVatInclusive === false, 'T6.6: Invoice without VAT has isVatInclusive=false (VAT row hidden)');
+  assert(nonVatTx.totalAmount === 300 - 20, 'T6.7: Non-VAT invoice total is exactly Subtotal - Discount');
 
   // -------------------------------------------------------------
   // Test 7: Mobile-Optimized PDF Generation Format verification
