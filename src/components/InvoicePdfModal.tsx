@@ -683,10 +683,24 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                   </div>
                 </div>
 
-                {profile.taxNumber && (
+                {profile.crNumber && (
                   <div className="text-xs sm:text-sm text-stone-600 mt-1">
+                    <span>{t.crNumber}: </span>
+                    <span className="font-mono font-bold">{profile.crNumber}</span>
+                  </div>
+                )}
+
+                {profile.taxNumber && (
+                  <div className="text-xs sm:text-sm text-stone-600 mt-0.5">
                     <span>{t.taxNumber}: </span>
                     <span className="font-mono font-bold">{profile.taxNumber}</span>
+                  </div>
+                )}
+
+                {profile.address && (
+                  <div className="text-xs sm:text-sm text-stone-600 mt-0.5">
+                    <span>{t.businessAddress}: </span>
+                    <span className="font-medium">{profile.address}</span>
                   </div>
                 )}
               </div>
@@ -853,19 +867,25 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
 
               {/* Row 5: Total (الإجمالي النهائي) */}
               <div className="flex items-center justify-between text-sm sm:text-base pt-2 border-t-2 border-stone-300 font-bold">
-                <span className="text-stone-900 font-black">{t.invoiceTotal}:</span>
-                <span className="font-black font-mono text-cyan-800 text-base sm:text-lg">
+                <span className="text-stone-900 font-black">
+                  {isQuotation
+                    ? (isRtl ? 'إجمالي عرض السعر التقديري:' : 'Quotation Total Estimate:')
+                    : `${t.invoiceTotal}:`}
+                </span>
+                <span className={`font-black font-mono text-base sm:text-lg ${isQuotation ? 'text-indigo-800' : 'text-cyan-800'}`}>
                   {formatCurrency(transaction.totalAmount, currency, lang)}
                 </span>
               </div>
 
-              {/* Paid Now */}
-              <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-200">
-                <span className="text-stone-600 font-medium">{t.paidNow}:</span>
-                <span className="font-bold font-mono text-cyan-700">
-                  {formatCurrency(transaction.paidAmount, currency, lang)}
-                </span>
-              </div>
+              {/* Paid Now (Invoices and returns only, never on quotations) */}
+              {!isQuotation && (
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-stone-200">
+                  <span className="text-stone-600 font-medium">{t.paidNow}:</span>
+                  <span className="font-bold font-mono text-cyan-700">
+                    {formatCurrency(transaction.paidAmount, currency, lang)}
+                  </span>
+                </div>
+              )}
 
               {isQuotation ? (
                 <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 text-xs space-y-1.5">

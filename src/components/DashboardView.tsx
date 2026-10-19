@@ -525,8 +525,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                       )}
                       {tx.type === 'QUOTATION' && (
-                        <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md inline-block mt-1">
-                          {isRtl ? 'عرض سعر' : 'Quotation'}
+                        <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md inline-block mt-1 border ${tx.isQuotationConverted ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-indigo-700 bg-indigo-50 border-indigo-200'}`}>
+                          {tx.isQuotationConverted ? (isRtl ? 'محوّل لفاتورة' : 'Converted') : (isRtl ? 'عرض سعر' : 'Quotation')}
                         </span>
                       )}
                       {tx.type === 'RETURN_SALE' && (

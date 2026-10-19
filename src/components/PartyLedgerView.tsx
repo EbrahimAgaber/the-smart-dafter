@@ -562,6 +562,11 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
                             {isRtl ? 'ملغي' : 'Voided'}
                           </span>
                         )}
+                        {tx.type === 'QUOTATION' && !isVoid && (
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${tx.isQuotationConverted ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+                            {tx.isQuotationConverted ? (isRtl ? 'محوّل لفاتورة' : 'Converted to Invoice') : (isRtl ? 'عرض سعر (تقديري)' : 'Price Quotation')}
+                          </span>
+                        )}
                         <span className="text-xs text-slate-400 flex items-center gap-1">
                           <Calendar className="w-2.5 h-2.5 text-slate-400" />
                           {formatDate(tx.date, lang)}
@@ -583,6 +588,12 @@ export const PartyLedgerView: React.FC<PartyLedgerViewProps> = ({
                     {/* Right: Amount & Running Balance */}
                     <div className="text-end shrink-0 ps-2">
                       <div className="flex items-center justify-end gap-1">
+                        {/* Quotation Estimate Amount */}
+                        {tx.type === 'QUOTATION' && !isVoid && (
+                          <div className="text-xs font-black font-mono text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
+                            {formatCurrency(tx.totalAmount, currency, lang)}
+                          </div>
+                        )}
                         {/* Debit or Credit impact */}
                         {entry.debit > 0 && (
                           <div className={`text-xs font-black font-mono ${isVoid ? 'text-slate-400 line-through' : 'text-rose-600'}`}>

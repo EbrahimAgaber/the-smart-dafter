@@ -102,6 +102,7 @@ export interface BusinessProfile {
   ownerName?: string;
   phone: string;
   taxNumber: string;
+  crNumber?: string; // رقم السجل التجاري (Commercial Registration Number)
   isVatEnabled?: boolean;
   defaultTaxRate?: number; // default 15%
   iban: string;
@@ -109,7 +110,7 @@ export interface BusinessProfile {
   logoBase64: string;
   invoiceFooterNote: string;
   currency: Currency;
-  address?: string;
+  address?: string; // عنوان المنشأة أو المحل (Business / Store Address)
 }
 
 export interface LedgerEntry {

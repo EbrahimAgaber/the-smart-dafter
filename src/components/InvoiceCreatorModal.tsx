@@ -592,7 +592,7 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       return;
     }
 
-    if (paidAmount > totalAmount) {
+    if (docMode !== 'QUOTATION' && paidAmount > totalAmount) {
       setValidationError(
         isRtl
           ? 'المبلغ المسدد نقدًا لا يمكن أن يتجاوز إجمالي الفاتورة'
@@ -626,6 +626,9 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       ? `${isRtl ? 'سبب الإرجاع: ' : 'Return Reason: '}${returnReason}${notes.trim() ? ` - ${notes.trim()}` : ''}`
       : notes.trim();
 
+    const finalPaidAmount = docMode === 'QUOTATION' ? 0 : paidAmount;
+    const finalBalanceDelta = docMode === 'QUOTATION' ? 0 : remainingBalanceDelta;
+
     if (existingTransaction && onUpdate) {
       onUpdate(existingTransaction.id, {
         partyId: selectedPartyId,
@@ -636,10 +639,10 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
         taxRate,
         taxAmount,
         totalAmount,
-        paidAmount,
-        remainingBalanceDelta,
+        paidAmount: finalPaidAmount,
+        remainingBalanceDelta: finalBalanceDelta,
         notes: finalNotes,
-        paymentMethod,
+        paymentMethod: docMode === 'QUOTATION' ? undefined : paymentMethod,
         customerPhone: customerPhone.trim(),
         autoSendWhatsApp,
         dueDate: dueDate || undefined,
@@ -659,10 +662,10 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       taxRate,
       taxAmount,
       totalAmount,
-      paidAmount,
-      remainingBalanceDelta,
+      paidAmount: finalPaidAmount,
+      remainingBalanceDelta: finalBalanceDelta,
       notes: finalNotes,
-      paymentMethod,
+      paymentMethod: docMode === 'QUOTATION' ? undefined : paymentMethod,
       customerPhone: customerPhone.trim(),
       autoSendWhatsApp,
       dueDate: dueDate || undefined,
@@ -708,11 +711,19 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
               <h2 className="text-sm font-bold text-slate-900 leading-tight">
                 {existingTransaction
                   ? `${t.editInvoiceTitle} #${existingTransaction.receiptNumber}`
+                  : docMode === 'QUOTATION'
+                  ? (isRtl ? 'عرض سعر جديد (تقدير مالي)' : 'New Price Quotation')
+                  : docMode === 'RETURN_SALE'
+                  ? (isRtl ? 'إشعار دائن (مرتجع مبيعات)' : 'Credit Note (Return)')
                   : (isSale ? t.creditSaleTitle : t.supplyIntakeTitle)}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 {existingTransaction
                   ? (isRtl ? 'تعديل أو حذف أو إضافة بنود وأصناف على الفاتورة' : 'Add, delete, or modify invoice line items')
+                  : docMode === 'QUOTATION'
+                  ? (isRtl ? 'إعداد عرض أسعار رسمي للعميل بدون تأثير على رصيد الذمم' : 'Official price estimate with zero ledger debt impact')
+                  : docMode === 'RETURN_SALE'
+                  ? (isRtl ? 'إشعار دائن لخصم بضاعة مرتجعة من رصيد العميل' : 'Issue credit note to deduct returned goods from balance')
                   : (isRtl ? 'تسجيل فوري مع إرسال تلقائي للواتساب وحفظ الرقم' : 'Instant invoice entry & auto WhatsApp')}
               </p>
             </div>
@@ -825,18 +836,34 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>{isRtl ? 'فاتورة عادية (0% بدون ضريبة)' : 'Standard (0% VAT)'}</span>
+              <span>
+                {docMode === 'QUOTATION'
+                  ? (isRtl ? 'عرض سعر بدون ضريبة (0%)' : 'Quotation (0% VAT)')
+                  : docMode === 'RETURN_SALE'
+                  ? (isRtl ? 'مرتجع عادي (بدون ضريبة)' : 'Standard Return (0% VAT)')
+                  : (isRtl ? 'فاتورة عادية (0% بدون ضريبة)' : 'Standard (0% VAT)')}
+              </span>
             </button>
             <button
               type="button"
               onClick={() => setApplyVat(true)}
               className={`py-2 px-3 rounded-xl font-bold transition-all flex items-center justify-center gap-1.5 min-h-[40px] ${
                 applyVat
-                  ? 'bg-cyan-600 text-white shadow-sm'
+                  ? docMode === 'QUOTATION'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : docMode === 'RETURN_SALE'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'bg-cyan-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <span>{isRtl ? 'فاتورة ضريبية (15% VAT)' : 'Tax Invoice (15% VAT)'}</span>
+              <span>
+                {docMode === 'QUOTATION'
+                  ? (isRtl ? 'عرض سعر شامل الضريبة (15% VAT)' : 'Quotation (15% VAT)')
+                  : docMode === 'RETURN_SALE'
+                  ? (isRtl ? 'إشعار دائن ضريبي (15% VAT)' : 'Tax Credit Note (15% VAT)')
+                  : (isRtl ? 'فاتورة ضريبية (15% VAT)' : 'Tax Invoice (15% VAT)')}
+              </span>
             </button>
           </div>
 
@@ -1788,164 +1815,273 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             {/* Row 5: Final Grand Total */}
             <div className="flex items-center justify-between text-xs pb-2 border-b border-slate-200">
               <span className="font-black text-slate-900 text-sm">
-                {isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:'}
+                {docMode === 'QUOTATION'
+                  ? (isRtl ? 'إجمالي عرض السعر التقديري:' : 'Quotation Total Estimate:')
+                  : (isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:')}
               </span>
-              <span className="text-base font-black font-mono text-cyan-800">
+              <span className={`text-base font-black font-mono ${docMode === 'QUOTATION' ? 'text-indigo-700' : 'text-cyan-800'}`}>
                 {formatCurrency(totalAmount, currency, lang)}
               </span>
             </div>
 
-            {/* Paid Now Input */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700">
-                  {t.paidNow}
-                </label>
-                {/* Fast Settlement Chips */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleSetPaidZero}
-                    className={`min-h-[36px] px-2.5 py-1 rounded-xl font-bold text-xs border transition-colors flex items-center justify-center ${
-                      paidAmount === 0
-                        ? 'bg-rose-50 text-rose-700 border-rose-300 shadow-2xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {t.payZero}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSetPaidHalf}
-                    className="min-h-[36px] px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 flex items-center justify-center font-mono"
-                  >
-                    50%
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSetPaidFull}
-                    className={`min-h-[36px] px-2.5 py-1 rounded-xl font-bold text-xs border transition-colors flex items-center justify-center ${
-                      paidAmount === totalAmount && totalAmount > 0
-                        ? 'bg-green-50 text-green-700 border-green-300 shadow-2xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {t.payInFull}
-                  </button>
+            {docMode === 'QUOTATION' ? (
+              /* Quotation-Specific Section: Validity, Terms & Zero-Debt Guarantee */
+              <div className="space-y-3 pt-1">
+                {/* Quotation Validity Period */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                      <span>⏱️</span>
+                      <span>{isRtl ? 'مدة سريان وصلاحية العرض (أيام):' : 'Quotation Validity (Days):'}</span>
+                    </label>
+                    <span className="text-xs font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200">
+                      {quotationValidityDays} {isRtl ? 'يوم' : 'days'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={quotationValidityDays}
+                      onChange={(e) => setQuotationValidityDays(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-24 bg-white text-slate-900 font-mono text-xs font-bold rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-indigo-500 shadow-2xs text-center min-h-[40px]"
+                    />
+                    {/* Quick Preset Days */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {[7, 15, 30, 45, 60].map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setQuotationValidityDays(d)}
+                          className={`min-h-[38px] px-2.5 py-1 rounded-xl text-xs font-mono font-bold border transition-colors ${
+                            quotationValidityDays === d
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                              : 'bg-white hover:bg-indigo-50 text-slate-700 border-slate-200 shadow-2xs'
+                          }`}
+                        >
+                          {d} {isRtl ? 'ي' : 'd'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quotation Terms & Conditions */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <span>📜</span>
+                    <span>{isRtl ? 'الشروط والأحكام الخاصة بعرض السعر (اختياري):' : 'Quotation Terms & Conditions:'}</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={quotationTerms}
+                    onChange={(e) => setQuotationTerms(e.target.value)}
+                    placeholder={isRtl ? 'مثال: الأسعار سارية حتى انتهاء المدة، والتسليم خلال 3 أيام' : 'e.g. Valid until expiry date, delivery in 3 days'}
+                    className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-indigo-500 shadow-2xs min-h-[40px]"
+                  />
+                  {/* Preset Quick Suggestion Chips for Terms */}
+                  <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+                    {[
+                      isRtl ? 'الأسعار سارية حتى انتهاء المدة' : 'Prices valid until expiry',
+                      isRtl ? 'التسليم خلال 3 أيام من تاريخ التعميد' : 'Delivery within 3 days',
+                      isRtl ? 'شامل أجور الشحن والتوصيل' : 'Includes delivery fees',
+                    ].map((termSnippet) => (
+                      <button
+                        key={termSnippet}
+                        type="button"
+                        onClick={() => {
+                          setQuotationTerms((prev) => prev ? `${prev} - ${termSnippet}` : termSnippet);
+                        }}
+                        className="text-[10px] px-2 py-0.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 transition-colors font-medium"
+                      >
+                        +{termSnippet}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quotation Zero Debt Guarantee Card */}
+                <div className="p-3 bg-indigo-50/90 rounded-2xl border border-indigo-200 text-indigo-950 text-xs space-y-1 shadow-2xs">
+                  <div className="flex items-center gap-2 font-bold text-indigo-900">
+                    <span className="text-base">📋</span>
+                    <span>{isRtl ? 'عرض سعر تقديري - لا يسجل أي مديونية' : 'Price Quotation - Zero Balance Impact'}</span>
+                  </div>
+                  <p className="text-[11px] text-indigo-800/90 leading-relaxed">
+                    {isRtl
+                      ? 'هذا المستند لا يُعد فاتورة ضريبية، ولا يترتب عليه أي ذمة مالية أو تعديل على رصيد العميل في الدفتر حتى يتم تعميده وتحويله لاحقاً إلى فاتورة مبيعات بنقرة واحدة.'
+                      : 'This document is a price estimate only. No debt will be added to the customer balance until approved and converted to an invoice.'}
+                  </p>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder={isRtl ? 'ملاحظات إضافية على عرض السعر...' : 'Quotation additional notes...'}
+                    className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-indigo-500 shadow-2xs min-h-[40px]"
+                  />
                 </div>
               </div>
+            ) : (
+              /* Standard Invoice / Return / Supply Payment Section */
+              <>
+                {/* Paid Now Input */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700">
+                      {t.paidNow}
+                    </label>
+                    {/* Fast Settlement Chips */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleSetPaidZero}
+                        className={`min-h-[36px] px-2.5 py-1 rounded-xl font-bold text-xs border transition-colors flex items-center justify-center ${
+                          paidAmount === 0
+                            ? 'bg-rose-50 text-rose-700 border-rose-300 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {t.payZero}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSetPaidHalf}
+                        className="min-h-[36px] px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 flex items-center justify-center font-mono"
+                      >
+                        50%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSetPaidFull}
+                        className={`min-h-[36px] px-2.5 py-1 rounded-xl font-bold text-xs border transition-colors flex items-center justify-center ${
+                          paidAmount === totalAmount && totalAmount > 0
+                            ? 'bg-green-50 text-green-700 border-green-300 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {t.payInFull}
+                      </button>
+                    </div>
+                  </div>
 
-              <input
-                id="input-invoice-paid-amount"
-                type="number"
-                min="0"
-                max={totalAmount}
-                step="any"
-                value={paidNowInput}
-                onChange={(e) => setPaidNowInput(e.target.value)}
-                className="w-full bg-white text-slate-900 font-mono text-sm font-bold rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 text-end shadow-2xs min-h-[44px]"
-              />
+                  <input
+                    id="input-invoice-paid-amount"
+                    type="number"
+                    min="0"
+                    max={totalAmount}
+                    step="any"
+                    value={paidNowInput}
+                    onChange={(e) => setPaidNowInput(e.target.value)}
+                    className="w-full bg-white text-slate-900 font-mono text-sm font-bold rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/20 text-end shadow-2xs min-h-[44px]"
+                  />
 
-              {/* Quick POS Increment Buttons */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {[10, 50, 100, 500].map((inc) => (
-                  <button
-                    key={inc}
-                    type="button"
-                    onClick={() => handleAddPaidIncrement(inc)}
-                    className="min-h-[36px] min-w-[44px] text-xs px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors flex items-center justify-center"
-                  >
-                    +{inc}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Remaining Debt Highlight Notice */}
-            <div
-              className={`p-3 rounded-xl border flex items-center justify-between shadow-2xs transition-colors ${
-                remainingBalanceDelta > 0
-                  ? 'bg-rose-50/70 border-rose-200 text-rose-900'
-                  : 'bg-green-50/70 border-green-200 text-green-900'
-              }`}
-            >
-              <div>
-                <span className="text-xs font-bold block">
-                  {remainingBalanceDelta > 0 ? t.remainingDebtDelta : isRtl ? 'مسدد بالكامل' : 'Fully Paid'}
-                </span>
-                <span className="text-[11px] opacity-80">
-                  {remainingBalanceDelta > 0
-                    ? isSale
-                      ? isRtl
-                        ? 'يُضاف كدين على العميل في الدفتر'
-                        : 'Will be posted as customer debt'
-                      : isRtl
-                      ? 'يُضاف كالتزام للمورد في الدفتر'
-                      : 'Will be posted as supplier payable'
-                    : isRtl
-                    ? 'لا يترتب أي دين على هذه الفاتورة'
-                    : 'No debt will be posted'}
-                </span>
-              </div>
-              <div className="text-base font-black font-mono">
-                {remainingBalanceDelta > 0 ? `+${formatCurrency(remainingBalanceDelta, currency, lang)}` : `0.00 ${currency}`}
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            {paidAmount > 0 && (
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                  {t.paymentMethod}
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('CASH')}
-                    className={`py-2 rounded-xl text-xs font-bold border transition-all min-h-[40px] ${
-                      paymentMethod === 'CASH'
-                        ? 'bg-green-600 text-white border-green-600 shadow-2xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
-                    }`}
-                  >
-                    {t.cash}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('BANK_TRANSFER')}
-                    className={`py-2 rounded-xl text-xs font-bold border transition-all min-h-[40px] ${
-                      paymentMethod === 'BANK_TRANSFER'
-                        ? 'bg-cyan-600 text-white border-cyan-600 shadow-2xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
-                    }`}
-                  >
-                    {t.bankTransfer}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPaymentMethod('CHEQUE')}
-                    className={`py-2 rounded-xl text-xs font-bold border transition-all min-h-[40px] ${
-                      paymentMethod === 'CHEQUE'
-                        ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
-                        : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
-                    }`}
-                  >
-                    {t.cheque}
-                  </button>
+                  {/* Quick POS Increment Buttons */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[10, 50, 100, 500].map((inc) => (
+                      <button
+                        key={inc}
+                        type="button"
+                        onClick={() => handleAddPaidIncrement(inc)}
+                        className="min-h-[36px] min-w-[44px] text-xs px-2.5 py-1 rounded-xl bg-white hover:bg-slate-100 text-slate-800 font-mono font-bold border border-slate-200 shadow-2xs transition-colors flex items-center justify-center"
+                      >
+                        +{inc}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+
+                {/* Remaining Debt Highlight Notice */}
+                <div
+                  className={`p-3 rounded-xl border flex items-center justify-between shadow-2xs transition-colors ${
+                    remainingBalanceDelta > 0
+                      ? 'bg-rose-50/70 border-rose-200 text-rose-900'
+                      : 'bg-green-50/70 border-green-200 text-green-900'
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">
+                      {remainingBalanceDelta > 0 ? t.remainingDebtDelta : isRtl ? 'مسدد بالكامل' : 'Fully Paid'}
+                    </span>
+                    <span className="text-[11px] opacity-80">
+                      {remainingBalanceDelta > 0
+                        ? isSale
+                          ? isRtl
+                            ? 'يُضاف كدين على العميل في الدفتر'
+                            : 'Will be posted as customer debt'
+                          : isRtl
+                          ? 'يُضاف كالتزام للمورد في الدفتر'
+                          : 'Will be posted as supplier payable'
+                        : isRtl
+                        ? 'لا يترتب أي دين على هذه الفاتورة'
+                        : 'No debt will be posted'}
+                    </span>
+                  </div>
+                  <div className="text-base font-black font-mono">
+                    {remainingBalanceDelta > 0 ? `+${formatCurrency(remainingBalanceDelta, currency, lang)}` : `0.00 ${currency}`}
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                {paidAmount > 0 && (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                      {t.paymentMethod}
+                    </label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('CASH')}
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all min-h-[40px] ${
+                          paymentMethod === 'CASH'
+                            ? 'bg-green-600 text-white border-green-600 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
+                        }`}
+                      >
+                        {t.cash}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('BANK_TRANSFER')}
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all min-h-[40px] ${
+                          paymentMethod === 'BANK_TRANSFER'
+                            ? 'bg-cyan-600 text-white border-cyan-600 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
+                        }`}
+                      >
+                        {t.bankTransfer}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPaymentMethod('CHEQUE')}
+                        className={`py-2 rounded-xl text-xs font-bold border transition-all min-h-[40px] ${
+                          paymentMethod === 'CHEQUE'
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                            : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
+                        }`}
+                      >
+                        {t.cheque}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div>
+                  <input
+                    type="text"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder={t.notesPlaceholder}
+                    className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs min-h-[40px]"
+                  />
+                </div>
+              </>
             )}
-
-            {/* Notes */}
-            <div>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder={t.notesPlaceholder}
-                className="w-full bg-white text-slate-800 placeholder-slate-400 text-xs rounded-xl px-3 py-2 border border-slate-200 focus:outline-none focus:border-cyan-500 shadow-2xs min-h-[40px]"
-              />
-            </div>
           </div>
 
           {/* Sticky Action Buttons */}
@@ -1960,10 +2096,24 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
             <button
               id="btn-confirm-save-invoice"
               type="submit"
-              className="flex-2 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-700 text-white font-black text-xs shadow-md shadow-cyan-950/20 transition-all active:scale-98 min-h-[48px] flex items-center justify-center gap-2"
+              className={`flex-2 py-3 rounded-2xl text-white font-black text-xs shadow-md transition-all active:scale-98 min-h-[48px] flex items-center justify-center gap-2 ${
+                docMode === 'QUOTATION'
+                  ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-950/20'
+                  : docMode === 'RETURN_SALE'
+                  ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-950/20'
+                  : 'bg-cyan-600 hover:bg-cyan-700 shadow-cyan-950/20'
+              }`}
             >
-              <span>{existingTransaction ? t.saveInvoiceModifications : t.saveTransaction}</span>
-              <span className="font-mono bg-cyan-700/80 px-2 py-0.5 rounded-lg text-[11px]">
+              <span>
+                {existingTransaction
+                  ? t.saveInvoiceModifications
+                  : docMode === 'QUOTATION'
+                  ? (isRtl ? 'حفظ وإصدار عرض السعر' : 'Save & Issue Quotation')
+                  : docMode === 'RETURN_SALE'
+                  ? (isRtl ? 'حفظ وترحيل الإشعار الدائن' : 'Post Credit Note')
+                  : t.saveTransaction}
+              </span>
+              <span className="font-mono bg-black/20 px-2 py-0.5 rounded-lg text-[11px]">
                 {formatCurrency(totalAmount, currency, lang)}
               </span>
             </button>

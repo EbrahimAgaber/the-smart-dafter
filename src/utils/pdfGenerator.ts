@@ -385,7 +385,15 @@ export async function generateStatementPdf(
           isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X,
           subY
         );
-        subY += 22;
+        subY += 20;
+      }
+      if (profile.crNumber) {
+        ctx.fillText(
+          `${isRtl ? 'السجل التجاري: ' : 'CR No: '} ${profile.crNumber}`,
+          isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X,
+          subY
+        );
+        subY += 20;
       }
       if (profile.taxNumber) {
         ctx.fillText(
@@ -393,6 +401,15 @@ export async function generateStatementPdf(
           isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X,
           subY
         );
+        subY += 20;
+      }
+      if (profile.address) {
+        ctx.fillText(
+          `${isRtl ? 'العنوان: ' : 'Address: '} ${profile.address}`,
+          isRtl ? A4_WIDTH - A4_MARGIN_X : A4_MARGIN_X,
+          subY
+        );
+        subY += 20;
       }
 
       // Title Badge
@@ -429,7 +446,7 @@ export async function generateStatementPdf(
       }
       ctx.restore();
 
-      currentY += 120;
+      currentY = Math.max(currentY + 120, subY + 14);
 
       // Divider
       ctx.strokeStyle = '#e2e8f0';
@@ -776,16 +793,24 @@ async function generateThermal80mmInvoicePdf(
   ctx.fillText(profile.name, WIDTH / 2, y + 20);
   y += 32;
 
-  // Phone & Tax
+  // Phone, CR, Tax & Address
   ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#475569';
   if (profile.phone) {
     ctx.fillText(`${isRtl ? 'هاتف: ' : 'Phone: '} ${profile.phone}`, WIDTH / 2, y + 14);
-    y += 22;
+    y += 20;
+  }
+  if (profile.crNumber) {
+    ctx.fillText(`${isRtl ? 'السجل التجاري: ' : 'CR: '} ${profile.crNumber}`, WIDTH / 2, y + 14);
+    y += 20;
   }
   if (profile.taxNumber) {
     ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, WIDTH / 2, y + 14);
-    y += 22;
+    y += 20;
+  }
+  if (profile.address) {
+    ctx.fillText(`${isRtl ? 'العنوان: ' : 'Address: '} ${profile.address}`, WIDTH / 2, y + 14);
+    y += 20;
   }
 
   // Divider
@@ -812,7 +837,10 @@ async function generateThermal80mmInvoicePdf(
 
   ctx.textAlign = isRtl ? 'right' : 'left';
   const rNumX = isRtl ? WIDTH - PADDING - 14 : PADDING + 14;
-  ctx.fillText(`${isRtl ? 'رقم الفاتورة: ' : 'Invoice #: '} ${transaction.receiptNumber}`, rNumX, y + 25);
+  const refLabel = transaction.type === 'QUOTATION'
+    ? (isRtl ? 'رقم العرض: ' : 'Quotation #: ')
+    : (isRtl ? 'رقم الفاتورة: ' : 'Invoice #: ');
+  ctx.fillText(`${refLabel} ${transaction.receiptNumber}`, rNumX, y + 25);
 
   ctx.textAlign = isRtl ? 'left' : 'right';
   const rDateX = isRtl ? PADDING + 14 : WIDTH - PADDING - 14;
@@ -978,8 +1006,8 @@ async function generateThermal80mmInvoicePdf(
 
   y += sumBoxH + 20;
 
-  // ZATCA QR Code
-  if (qrImg) {
+  // ZATCA QR Code (Tax Invoices only; Never on Quotations)
+  if (qrImg && transaction.type !== 'QUOTATION') {
     const qSize = 140;
     const qrCardW = 220;
     const qrCardH = 210;
@@ -998,6 +1026,34 @@ async function generateThermal80mmInvoicePdf(
     ctx.fillText(isRtl ? 'معتمدة إلكترونياً' : 'E-Invoice Verified', WIDTH / 2, y + qSize + 54);
 
     y += qrCardH + 20;
+  } else if (transaction.type === 'QUOTATION') {
+    const qBoxH = 92;
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, qBoxH, 10, '#eef2ff', '#c7d2fe', 1.2);
+    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#3730a3';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      isRtl ? '📋 عرض سعر تقديري (غير ملزم مالياً - ليس فاتورة ضريبية)' : '📋 Price Quotation (Estimate - Not a Tax Invoice)',
+      WIDTH / 2,
+      y + 26
+    );
+    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#4f46e5';
+    ctx.fillText(
+      isRtl
+        ? `صالح لمدة ${transaction.quotationValidityDays || 15} يوماً من تاريخ الإصدار`
+        : `Valid for ${transaction.quotationValidityDays || 15} days from issue date`,
+      WIDTH / 2,
+      y + 48
+    );
+    ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#6366f1';
+    ctx.fillText(
+      isRtl ? 'لا يترتب عليه أي ذمة مالية حتى اعتماده وتحويله لفاتورة مبيعات' : 'No financial liability until converted to a sale invoice',
+      WIDTH / 2,
+      y + 70
+    );
+    y += qBoxH + 20;
   }
 
   // Footer Note
@@ -1115,14 +1171,23 @@ async function generateMobilePhoneInvoicePdf(
   let subY = y + 58;
   if (profile.phone) {
     ctx.fillText(`${isRtl ? 'هاتف / جوال: ' : 'Phone: '} ${profile.phone}`, textStartX, subY);
-    subY += 24;
+    subY += 22;
+  }
+  if (profile.crNumber) {
+    ctx.fillText(`${isRtl ? 'السجل التجاري: ' : 'CR: '} ${profile.crNumber}`, textStartX, subY);
+    subY += 22;
   }
   if (profile.taxNumber) {
     ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, textStartX, subY);
+    subY += 22;
+  }
+  if (profile.address) {
+    ctx.fillText(`${isRtl ? 'العنوان: ' : 'Address: '} ${profile.address}`, textStartX, subY);
+    subY += 22;
   }
   ctx.restore();
 
-  y += logoImg ? 96 : 84;
+  y = Math.max(logoImg ? y + 96 : y + 84, subY + 14);
 
   // 2. Document Title Badge
   drawRoundedRect(ctx, PADDING, y, C_WIDTH, 46, 8, naming.color || '#0f172a');
@@ -1145,7 +1210,10 @@ async function generateMobilePhoneInvoicePdf(
   const rX = isRtl ? WIDTH - PADDING - 18 : PADDING + 18;
   ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(isRtl ? 'رقم الفاتورة: ' : 'Invoice No: ', rX, y + 26);
+  const refLabel = transaction.type === 'QUOTATION'
+    ? (isRtl ? 'رقم العرض: ' : 'Quotation No: ')
+    : (isRtl ? 'رقم الفاتورة: ' : 'Invoice No: ');
+  ctx.fillText(refLabel, rX, y + 26);
 
   ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", monospace';
   ctx.fillStyle = '#0f172a';
@@ -1479,8 +1547,8 @@ async function generateMobilePhoneInvoicePdf(
 
   y += cardH + 22;
 
-  // 7. ZATCA QR Code & Official Verification
-  if (qrImg) {
+  // 7. ZATCA QR Code & Official Verification (Tax Invoices only; Never on Quotations)
+  if (qrImg && transaction.type !== 'QUOTATION') {
     const qrCardW = 260;
     const qrCardH = 240;
     const qrCardX = (WIDTH - qrCardW) / 2;
@@ -1501,6 +1569,38 @@ async function generateMobilePhoneInvoicePdf(
     ctx.restore();
 
     y += qrCardH + 20;
+  } else if (transaction.type === 'QUOTATION') {
+    const qBoxH = 108;
+    drawRoundedRect(ctx, PADDING, y, C_WIDTH, qBoxH, 12, '#eef2ff', '#c7d2fe', 1.2);
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#3730a3';
+    ctx.fillText(
+      isRtl ? '📋 عرض سعر تقديري رسمي (غير ملزم مالياً)' : '📋 Official Price Quotation (Estimate - Non-Binding)',
+      WIDTH / 2,
+      y + 32
+    );
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#4f46e5';
+    ctx.fillText(
+      isRtl
+        ? `مدة سريان العرض: ${transaction.quotationValidityDays || 15} يوماً من تاريخ الإصدار`
+        : `Validity: ${transaction.quotationValidityDays || 15} days from date of issue`,
+      WIDTH / 2,
+      y + 60
+    );
+    ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#6366f1';
+    ctx.fillText(
+      isRtl
+        ? 'هذا المستند لا يُعد فاتورة ضريبية ولا يترتب عليه أي ذمة مالية حتى اعتماده وتحويله لفاتورة مبيعات'
+        : 'This document is not a tax invoice and has no financial ledger impact until converted to an invoice',
+      WIDTH / 2,
+      y + 88
+    );
+    ctx.restore();
+    y += qBoxH + 20;
   }
 
   // Footer notes & quotation terms
@@ -1622,14 +1722,23 @@ export async function generateInvoicePdf(
   let bSubY = currentY + 62;
   if (profile.phone) {
     ctx.fillText(`${isRtl ? 'الهاتف: ' : 'Phone: '} ${profile.phone}`, textStartX, bSubY);
-    bSubY += 24;
+    bSubY += 22;
+  }
+  if (profile.crNumber) {
+    ctx.fillText(`${isRtl ? 'السجل التجاري: ' : 'CR: '} ${profile.crNumber}`, textStartX, bSubY);
+    bSubY += 22;
   }
   if (profile.taxNumber) {
     ctx.fillText(`${isRtl ? 'الرقم الضريبي: ' : 'VAT: '} ${profile.taxNumber}`, textStartX, bSubY);
+    bSubY += 22;
+  }
+  if (profile.address) {
+    ctx.fillText(`${isRtl ? 'العنوان: ' : 'Address: '} ${profile.address}`, textStartX, bSubY);
+    bSubY += 22;
   }
 
   // Document Badge
-  const badgeW = 260;
+  const badgeW = 280;
   const badgeH = 50;
   const badgeX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X - badgeW;
   drawRoundedRect(ctx, badgeX, currentY, badgeW, badgeH, 8, naming.color || '#0f172a');
@@ -1644,14 +1753,17 @@ export async function generateInvoicePdf(
   ctx.fillStyle = '#0f172a';
   ctx.textAlign = isRtl ? 'left' : 'right';
   const metaX = isRtl ? A4_MARGIN_X : A4_WIDTH - A4_MARGIN_X;
-  ctx.fillText(`#${transaction.receiptNumber}`, metaX, currentY + 80);
+  const refLabel = transaction.type === 'QUOTATION'
+    ? (isRtl ? 'عرض سعر ' : 'Quotation ')
+    : (isRtl ? 'فاتورة ' : 'Invoice ');
+  ctx.fillText(`${refLabel}#${transaction.receiptNumber}`, metaX, currentY + 80);
 
   ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
   ctx.fillText(formatPdfDate(transaction.date, lang), metaX, currentY + 104);
   ctx.restore();
 
-  currentY += 135;
+  currentY = Math.max(currentY + 135, bSubY + 14);
 
   // Divider line
   ctx.strokeStyle = '#e2e8f0';
@@ -1917,7 +2029,7 @@ export async function generateInvoicePdf(
   ctx.direction = isRtl ? 'rtl' : 'ltr';
   ctx.textAlign = 'center';
 
-  if (qrImg) {
+  if (qrImg && transaction.type !== 'QUOTATION') {
     const qrSize = 145;
     ctx.drawImage(qrImg, qrBoxX + (qrBoxW - qrSize) / 2, sumY + 20, qrSize, qrSize);
 
@@ -1936,6 +2048,50 @@ export async function generateInvoicePdf(
       qrBoxX + qrBoxW / 2,
       sumY + 218
     );
+  } else if (transaction.type === 'QUOTATION') {
+    ctx.font = 'bold 16px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#3730a3';
+    ctx.fillText(
+      isRtl ? '📋 عرض سعر تقديري رسمي' : '📋 Official Price Quotation',
+      qrBoxX + qrBoxW / 2,
+      sumY + 60
+    );
+
+    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#4f46e5';
+    ctx.fillText(
+      isRtl ? '(غير ملزم مالياً - ليس فاتورة ضريبية)' : '(Estimate - Not a Tax Invoice)',
+      qrBoxX + qrBoxW / 2,
+      sumY + 90
+    );
+
+    ctx.font = 'bold 13px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#1e293b';
+    ctx.fillText(
+      isRtl
+        ? `مدة السريان: ${transaction.quotationValidityDays || 15} يوماً من تاريخه`
+        : `Validity: ${transaction.quotationValidityDays || 15} days from issue`,
+      qrBoxX + qrBoxW / 2,
+      sumY + 120
+    );
+
+    ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#6366f1';
+    ctx.fillText(
+      isRtl ? 'لا يترتب عليه أي ذمة مالية حتى اعتماده' : 'No financial liability until converted',
+      qrBoxX + qrBoxW / 2,
+      sumY + 150
+    );
+
+    if (transaction.quotationTerms) {
+      ctx.font = '12px Cairo, Tahoma, "Segoe UI", sans-serif';
+      ctx.fillStyle = '#475569';
+      ctx.fillText(
+        fitText(ctx, `شروط: ${transaction.quotationTerms}`, qrBoxW - 24),
+        qrBoxX + qrBoxW / 2,
+        sumY + 180
+      );
+    }
   } else {
     ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#64748b';

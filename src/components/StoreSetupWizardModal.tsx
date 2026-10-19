@@ -40,6 +40,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
   const [phone, setPhone] = useState(currentProfile.phone || '');
   const [currency, setCurrency] = useState<Currency>(currentProfile.currency || 'SAR');
   const [taxNumber, setTaxNumber] = useState(currentProfile.taxNumber || '');
+  const [crNumber, setCrNumber] = useState(currentProfile.crNumber || '');
   const [address, setAddress] = useState(currentProfile.address || '');
   const [freshStart, setFreshStart] = useState<boolean>(false);
 
@@ -60,6 +61,7 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
         phone: phone.trim(),
         currency,
         taxNumber: taxNumber.trim(),
+        crNumber: crNumber.trim(),
         address: address.trim(),
       },
       freshStart
@@ -202,30 +204,45 @@ export const StoreSetupWizardModal: React.FC<StoreSetupWizardModalProps> = ({
 
         {/* Step 2: Clean Ledger Option & Confirmation */}
         {step === 2 && (
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                {isRtl ? 'الرقم الضريبي أو السجل التجاري (اختياري)' : 'Tax ID / CR Number (Optional)'}
-              </label>
-              <input
-                type="text"
-                value={taxNumber}
-                onChange={(e) => setTaxNumber(e.target.value)}
-                placeholder="300000000000003"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors font-mono"
-              />
+          <div className="space-y-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  {isRtl ? 'الرقم الضريبي VAT (اختياري)' : 'Tax / VAT Number (Optional)'}
+                </label>
+                <input
+                  type="text"
+                  value={taxNumber}
+                  onChange={(e) => setTaxNumber(e.target.value)}
+                  placeholder="300000000000003"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  {isRtl ? 'السجل التجاري CR (اختياري)' : 'Commercial Registration (CR)'}
+                </label>
+                <input
+                  type="text"
+                  value={crNumber}
+                  onChange={(e) => setCrNumber(e.target.value)}
+                  placeholder="1010123456"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500 transition-colors font-mono"
+                />
+              </div>
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                {isRtl ? 'عنوان المحل أو المدينة (اختياري)' : 'Store Address or City (Optional)'}
+                {isRtl ? 'عنوان المنشأة أو المحل (اختياري)' : 'Store Address (City, District, Street)'}
               </label>
               <input
                 type="text"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder={isRtl ? 'الرياض - حي الملز' : 'Riyadh, Saudi Arabia'}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:border-sky-500 transition-colors"
+                placeholder={isRtl ? 'الرياض - حي الملز - شارع الستين' : 'Riyadh - Al Malaz District'}
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-sky-500 transition-colors"
               />
             </div>
 

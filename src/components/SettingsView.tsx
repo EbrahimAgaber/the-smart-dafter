@@ -76,6 +76,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [name, setName] = useState(profile.name);
   const [phone, setPhone] = useState(profile.phone);
   const [taxNumber, setTaxNumber] = useState(profile.taxNumber);
+  const [crNumber, setCrNumber] = useState(profile.crNumber || '');
+  const [address, setAddress] = useState(profile.address || '');
   const [isVatEnabled, setIsVatEnabled] = useState(profile.isVatEnabled ?? true);
   const [defaultTaxRate, setDefaultTaxRate] = useState(profile.defaultTaxRate ?? 15);
   const [bankName, setBankName] = useState(profile.bankName);
@@ -87,6 +89,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [importStatus, setImportStatus] = useState<string>('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [devTapCount, setDevTapCount] = useState(0);
+
+  useEffect(() => {
+    setName(profile.name);
+    setPhone(profile.phone);
+    setTaxNumber(profile.taxNumber);
+    setCrNumber(profile.crNumber || '');
+    setAddress(profile.address || '');
+    setIsVatEnabled(profile.isVatEnabled ?? true);
+    setDefaultTaxRate(profile.defaultTaxRate ?? 15);
+    setBankName(profile.bankName);
+    setIban(profile.iban);
+    setCurrency(profile.currency || 'SAR');
+    setInvoiceFooterNote(profile.invoiceFooterNote);
+    setLogoBase64(profile.logoBase64);
+  }, [profile]);
 
   // Storage Health Audit and Diagnostics
   const store = SQLiteLedgerStore.getInstance();
@@ -251,6 +268,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       name: name.trim(),
       phone: phone.trim(),
       taxNumber: taxNumber.trim(),
+      crNumber: crNumber.trim(),
+      address: address.trim(),
       isVatEnabled,
       defaultTaxRate: Number(defaultTaxRate) || 15,
       bankName: bankName.trim(),
@@ -463,6 +482,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                placeholder="05xxxxxxxx"
                 className="w-full bg-slate-50 text-slate-900 text-xs font-mono rounded-xl px-3 py-2 border border-slate-200 shadow-2xs focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -474,7 +494,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 type="text"
                 value={taxNumber}
                 onChange={(e) => setTaxNumber(e.target.value)}
+                placeholder="300000000000003"
                 className="w-full bg-slate-50 text-slate-900 text-xs font-mono rounded-xl px-3 py-2 border border-slate-200 shadow-2xs focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+          </div>
+
+          {/* CR Number & Business Address */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">
+                {t.crNumber}
+              </label>
+              <input
+                type="text"
+                value={crNumber}
+                onChange={(e) => setCrNumber(e.target.value)}
+                placeholder={t.crNumberPlaceholder}
+                className="w-full bg-slate-50 text-slate-900 text-xs font-mono rounded-xl px-3 py-2 border border-slate-200 shadow-2xs focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">
+                {t.businessAddress}
+              </label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder={t.businessAddressPlaceholder}
+                className="w-full bg-slate-50 text-slate-900 text-xs rounded-xl px-3 py-2 border border-slate-200 shadow-2xs focus:outline-none focus:border-cyan-500"
               />
             </div>
           </div>

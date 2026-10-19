@@ -161,6 +161,15 @@ export function buildSmartWhatsAppMessage(
 
     if (isArabic) {
       let msg = `*${profile.name}*\n`;
+      if (profile.crNumber) {
+        msg += `🏢 س.ت (CR): *${profile.crNumber}*\n`;
+      }
+      if (profile.taxNumber) {
+        msg += `🏷️ الرقم الضريبي: *${profile.taxNumber}*\n`;
+      }
+      if (profile.address) {
+        msg += `📍 العنوان: ${profile.address}\n`;
+      }
       msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `${naming.icon} *${naming.title}*\n`;
       msg += `📌 رقم القيد: *${transaction.receiptNumber}*\n`;
@@ -254,6 +263,15 @@ export function buildSmartWhatsAppMessage(
     } else {
       // English
       let msg = `*${profile.name}*\n`;
+      if (profile.crNumber) {
+        msg += `🏢 CR No: *${profile.crNumber}*\n`;
+      }
+      if (profile.taxNumber) {
+        msg += `🏷️ VAT No: *${profile.taxNumber}*\n`;
+      }
+      if (profile.address) {
+        msg += `📍 Address: ${profile.address}\n`;
+      }
       msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `${naming.icon} *${naming.title}*\n`;
       msg += `📌 Ref #: *${transaction.receiptNumber}*\n`;
@@ -345,6 +363,15 @@ export function buildSmartWhatsAppMessage(
   // 2. Account Statement Message (party-level notice)
   if (isArabic) {
     let msg = `*${profile.name}*\n`;
+    if (profile.crNumber) {
+      msg += `🏢 س.ت (CR): *${profile.crNumber}*\n`;
+    }
+    if (profile.taxNumber) {
+      msg += `🏷️ الرقم الضريبي: *${profile.taxNumber}*\n`;
+    }
+    if (profile.address) {
+      msg += `📍 العنوان: ${profile.address}\n`;
+    }
     msg += `📋 *إشعار كشف حساب مالي - آجل*\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `👤 الحساب: *${party.name}*\n`;
@@ -369,6 +396,15 @@ export function buildSmartWhatsAppMessage(
     return encodeURIComponent(msg);
   } else {
     let msg = `*${profile.name}*\n`;
+    if (profile.crNumber) {
+      msg += `🏢 CR No: *${profile.crNumber}*\n`;
+    }
+    if (profile.taxNumber) {
+      msg += `🏷️ VAT No: *${profile.taxNumber}*\n`;
+    }
+    if (profile.address) {
+      msg += `📍 Address: ${profile.address}\n`;
+    }
     msg += `📋 *Account Statement Notice*\n`;
     msg += `━━━━━━━━━━━━━━━━━━━━━\n`;
     msg += `👤 Account: *${party.name}*\n`;

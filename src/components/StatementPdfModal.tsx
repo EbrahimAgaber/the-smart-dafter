@@ -473,9 +473,19 @@ export const StatementPdfModal: React.FC<StatementPdfModalProps> = ({
                 <p className="text-xs text-stone-600 font-medium">
                   {profile.phone}
                 </p>
+                {profile.crNumber && (
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    {t.crNumber}: <span className="font-mono font-bold">{profile.crNumber}</span>
+                  </p>
+                )}
                 {profile.taxNumber && (
                   <p className="text-xs text-stone-500 mt-0.5">
                     {t.taxNumber}: <span className="font-mono font-bold">{profile.taxNumber}</span>
+                  </p>
+                )}
+                {profile.address && (
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    {t.businessAddress}: <span className="font-medium">{profile.address}</span>
                   </p>
                 )}
               </div>

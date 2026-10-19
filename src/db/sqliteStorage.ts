@@ -14,6 +14,8 @@ export const defaultBusinessProfile: BusinessProfile = {
   name: '',
   phone: '',
   taxNumber: '',
+  crNumber: '',
+  address: '',
   isVatEnabled: true,
   defaultTaxRate: 15,
   iban: '',
