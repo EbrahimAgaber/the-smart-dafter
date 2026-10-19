@@ -51,6 +51,7 @@ interface InvoiceCreatorModalProps {
     paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
     customerPhone?: string;
     autoSendWhatsApp?: boolean;
+    sharePreference?: 'PREVIEW' | 'SEND_PDF' | 'SEND_TEXT' | 'SAVE_ONLY';
     dueDate?: string;
     supplierInvoiceAttachment?: string;
     quotationValidityDays?: number;
@@ -111,8 +112,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
     }
   }, [selectedParty]);
 
-  // Auto-send invoice via WhatsApp toggle (disabled by default when editing)
-  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState<boolean>(!existingTransaction);
+  // Sharing choice upon confirmation: 'PREVIEW' (Default, lets user choose in viewer), 'SEND_PDF', 'SEND_TEXT', 'SAVE_ONLY'
+  const [sharePreference, setSharePreference] = useState<'PREVIEW' | 'SEND_PDF' | 'SEND_TEXT' | 'SAVE_ONLY'>('PREVIEW');
 
   // Party search query & modal dropdown
   const [partySearchQuery, setPartySearchQuery] = useState('');
@@ -644,7 +645,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
         notes: finalNotes,
         paymentMethod: docMode === 'QUOTATION' ? undefined : paymentMethod,
         customerPhone: customerPhone.trim(),
-        autoSendWhatsApp,
+        autoSendWhatsApp: sharePreference === 'SEND_TEXT',
+        sharePreference,
         dueDate: dueDate || undefined,
         supplierInvoiceAttachment: supplierInvoicePhoto || undefined,
         quotationValidityDays: docMode === 'QUOTATION' ? (Number(quotationValidityDays) || 15) : undefined,
@@ -667,7 +669,8 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
       notes: finalNotes,
       paymentMethod: docMode === 'QUOTATION' ? undefined : paymentMethod,
       customerPhone: customerPhone.trim(),
-      autoSendWhatsApp,
+      autoSendWhatsApp: sharePreference === 'SEND_TEXT',
+      sharePreference,
       dueDate: dueDate || undefined,
       supplierInvoiceAttachment: supplierInvoicePhoto || undefined,
       quotationValidityDays: docMode === 'QUOTATION' ? (Number(quotationValidityDays) || 15) : undefined,
@@ -1043,23 +1046,124 @@ export const InvoiceCreatorModal: React.FC<InvoiceCreatorModalProps> = ({
                 />
               </div>
 
-              {/* Automatic WhatsApp Direct Send Toggle */}
-              <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={autoSendWhatsApp}
-                  onChange={(e) => setAutoSendWhatsApp(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300"
-                />
-                <div className="text-xs">
-                  <span className="font-bold text-slate-800 block">
-                    {t.autoSendWhatsApp}
+              {/* Sharing Action Selector (Lets user choose preview, PDF, text, or save only) */}
+              <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span>📤</span>
+                    <span>{isRtl ? 'طريقة المشاركة عند الحفظ والتأكيد:' : 'Sharing Action on Save:'}</span>
                   </span>
-                  <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
-                    {t.autoSendWhatsAppDesc}
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {isRtl ? '(اختر الإجراء المفضل لك - افتراضياً لا يتم إرسال أي نص تلقائي)' : '(Choose action - no text is sent automatically)'}
                   </span>
                 </div>
-              </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Option 1: Preview Document & Choose Sharing in Viewer (Recommended, Default) */}
+                  <button
+                    type="button"
+                    onClick={() => setSharePreference('PREVIEW')}
+                    className={`p-2.5 rounded-xl border text-start transition-all flex items-start gap-2 ${
+                      sharePreference === 'PREVIEW'
+                        ? 'bg-cyan-50/90 border-cyan-500 ring-2 ring-cyan-500/20 shadow-2xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border mt-0.5 shrink-0 flex items-center justify-center ${
+                      sharePreference === 'PREVIEW' ? 'border-cyan-600 bg-cyan-600' : 'border-slate-300'
+                    }`}>
+                      {sharePreference === 'PREVIEW' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-800 block flex items-center gap-1">
+                        <span>👁️</span>
+                        <span>{isRtl ? 'معاينة المستند أولاً (الموصى به)' : 'Preview Document (Recommended)'}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                        {isRtl ? 'فتح الوثيقة للاطلاع وتحديد إرسال PDF أو نص أو تحميلها' : 'View rendered document, then choose PDF, text, or download'}
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Option 2: Send PDF File directly via WhatsApp */}
+                  <button
+                    type="button"
+                    onClick={() => setSharePreference('SEND_PDF')}
+                    className={`p-2.5 rounded-xl border text-start transition-all flex items-start gap-2 ${
+                      sharePreference === 'SEND_PDF'
+                        ? 'bg-emerald-50/90 border-emerald-500 ring-2 ring-emerald-500/20 shadow-2xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border mt-0.5 shrink-0 flex items-center justify-center ${
+                      sharePreference === 'SEND_PDF' ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300'
+                    }`}>
+                      {sharePreference === 'SEND_PDF' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-800 block flex items-center gap-1">
+                        <span>📄</span>
+                        <span>{isRtl ? 'إرسال مستند PDF عبر واتساب' : 'Send PDF File via WhatsApp'}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                        {isRtl ? 'تجهيز ملف PDF الرسمي وتوجيهه لواتساب فور الحفظ' : 'Directly dispatch official PDF file via WhatsApp on save'}
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Option 3: Send Text Summary via WhatsApp */}
+                  <button
+                    type="button"
+                    onClick={() => setSharePreference('SEND_TEXT')}
+                    className={`p-2.5 rounded-xl border text-start transition-all flex items-start gap-2 ${
+                      sharePreference === 'SEND_TEXT'
+                        ? 'bg-teal-50/90 border-teal-500 ring-2 ring-teal-500/20 shadow-2xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border mt-0.5 shrink-0 flex items-center justify-center ${
+                      sharePreference === 'SEND_TEXT' ? 'border-teal-600 bg-teal-600' : 'border-slate-300'
+                    }`}>
+                      {sharePreference === 'SEND_TEXT' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-800 block flex items-center gap-1">
+                        <span>💬</span>
+                        <span>{isRtl ? 'إرسال ملخص نصي عبر واتساب' : 'Send Text Summary via WhatsApp'}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                        {isRtl ? 'فتح محادثة واتساب بنص وبنود المعاملة فقط' : 'Open WhatsApp chat with formatted text summary'}
+                      </span>
+                    </div>
+                  </button>
+
+                  {/* Option 4: Save Only without sending */}
+                  <button
+                    type="button"
+                    onClick={() => setSharePreference('SAVE_ONLY')}
+                    className={`p-2.5 rounded-xl border text-start transition-all flex items-start gap-2 ${
+                      sharePreference === 'SAVE_ONLY'
+                        ? 'bg-slate-100 border-slate-500 ring-2 ring-slate-500/20 shadow-2xs'
+                        : 'bg-white hover:bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className={`w-4 h-4 rounded-full border mt-0.5 shrink-0 flex items-center justify-center ${
+                      sharePreference === 'SAVE_ONLY' ? 'border-slate-600 bg-slate-600' : 'border-slate-300'
+                    }`}>
+                      {sharePreference === 'SAVE_ONLY' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-slate-800 block flex items-center gap-1">
+                        <span>💾</span>
+                        <span>{isRtl ? 'حفظ فقط (بدون إرسال)' : 'Save Only (No Message)'}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
+                        {isRtl ? 'تسجيل العملية بالدفتر بدون فتح واتساب' : 'Record in ledger without opening WhatsApp'}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Quotation Terms & Duration Configurator */}

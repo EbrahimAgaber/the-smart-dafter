@@ -212,7 +212,17 @@ export class SQLiteLedgerStore {
         if (storedParties && storedProducts && storedTx) {
           this.parties = JSON.parse(storedParties);
           this.products = JSON.parse(storedProducts);
-          this.transactions = JSON.parse(storedTx);
+          this.transactions = (JSON.parse(storedTx) as Transaction[]).map((tx) => {
+            if (tx.type === 'QUOTATION') {
+              return {
+                ...tx,
+                paidAmount: 0,
+                remainingBalanceDelta: 0,
+                paymentMethod: undefined,
+              };
+            }
+            return tx;
+          });
           if (storedProfile) {
             this.profile = JSON.parse(storedProfile);
           }
@@ -678,16 +688,16 @@ export class SQLiteLedgerStore {
       taxRate: txData.taxRate,
       taxAmount: txData.taxAmount,
       totalAmount: Math.max(0, txData.totalAmount),
-      paidAmount: Math.max(0, txData.paidAmount),
-      remainingBalanceDelta: txData.remainingBalanceDelta,
+      paidAmount: txData.type === 'QUOTATION' ? 0 : Math.max(0, txData.paidAmount),
+      remainingBalanceDelta: txData.type === 'QUOTATION' ? 0 : txData.remainingBalanceDelta,
       notes: txData.notes || '',
       receiptNumber: txData.customReceiptNumber || generatedReceipt,
-      paymentMethod: txData.paymentMethod || 'CASH',
+      paymentMethod: txData.type === 'QUOTATION' ? undefined : (txData.paymentMethod || 'CASH'),
       quotationValidityDays: txData.quotationValidityDays,
       quotationTerms: txData.quotationTerms,
       isQuotationConverted: txData.isQuotationConverted,
       convertedTransactionId: txData.convertedTransactionId,
-      dueDate: txData.dueDate,
+      dueDate: txData.type === 'QUOTATION' ? undefined : txData.dueDate,
       supplierInvoiceAttachment: txData.supplierInvoiceAttachment,
     };
 
@@ -794,6 +804,7 @@ export class SQLiteLedgerStore {
       throw new Error(check.reason || 'Cannot modify this invoice (5-day window expired or voided)');
     }
 
+    const isQuot = (updatedData.type || existing.type) === 'QUOTATION';
     const updatedTx: Transaction = {
       ...existing,
       ...updatedData,
@@ -801,6 +812,9 @@ export class SQLiteLedgerStore {
       receiptNumber: existing.receiptNumber, // Retain official invoice sequence number
       partyId: updatedData.partyId || existing.partyId,
       type: updatedData.type || existing.type,
+      paidAmount: isQuot ? 0 : (updatedData.paidAmount ?? existing.paidAmount),
+      remainingBalanceDelta: isQuot ? 0 : (updatedData.remainingBalanceDelta ?? existing.remainingBalanceDelta),
+      paymentMethod: isQuot ? undefined : (updatedData.paymentMethod ?? existing.paymentMethod),
       date: existing.date, // Retain original issue timestamp
       updatedAt: new Date().toISOString(),
       isModified: true,

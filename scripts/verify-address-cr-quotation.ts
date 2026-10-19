@@ -157,7 +157,17 @@ function runAssertions() {
   }
   console.log('  [PASS] WhatsApp message includes Store Address and CR Number');
 
-  console.log('\n🎉 ALL 6 VERIFICATION CHECKS PASSED!\n');
+  // Test 7: Verify Quotation has no payment method and zero debt
+  console.log('Test 7: Verifying Quotation has undefined paymentMethod and zero paidAmount');
+  if (quotation.paymentMethod !== undefined) {
+    throw new Error(`Quotation must have undefined paymentMethod, got: ${quotation.paymentMethod}`);
+  }
+  if (quotation.paidAmount !== 0) {
+    throw new Error(`Quotation paidAmount must be 0, got: ${quotation.paidAmount}`);
+  }
+  console.log('  [PASS] Quotation correctly omits payment method and paid amount');
+
+  console.log('\n🎉 ALL 7 VERIFICATION CHECKS PASSED!\n');
 }
 
 runAssertions();

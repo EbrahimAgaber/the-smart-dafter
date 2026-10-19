@@ -180,9 +180,10 @@ export default function App() {
     paidAmount: number;
     remainingBalanceDelta: number;
     notes: string;
-    paymentMethod: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
+    paymentMethod?: 'CASH' | 'BANK_TRANSFER' | 'CHEQUE';
     customerPhone?: string;
     autoSendWhatsApp?: boolean;
+    sharePreference?: 'PREVIEW' | 'SEND_PDF' | 'SEND_TEXT' | 'SAVE_ONLY';
     dueDate?: string;
     supplierInvoiceAttachment?: string;
     quotationValidityDays?: number;
@@ -205,6 +206,8 @@ export default function App() {
     refreshStoreData();
     setActiveModal(null);
 
+    const sharePref = txData.sharePreference || (txData.autoSendWhatsApp ? 'SEND_TEXT' : 'PREVIEW');
+
     // Prompt receipt / invoice PDF for immediate view or WhatsApp sharing
     const party = store.getPartyById(txData.partyId);
     if (party) {
@@ -217,8 +220,13 @@ export default function App() {
         refreshStoreData();
       }
 
-      // Direct WhatsApp dispatch if autoSendWhatsApp was requested
-      if (txData.autoSendWhatsApp) {
+      // If user chose to save only, do not open WhatsApp or preview
+      if (sharePref === 'SAVE_ONLY') {
+        return;
+      }
+
+      // Direct WhatsApp text dispatch only if user explicitly selected SEND_TEXT
+      if (sharePref === 'SEND_TEXT') {
         const phoneToUse = txData.customerPhone || party.phone;
         const cleanPhone = sanitizePhoneNumber(phoneToUse);
         if (cleanPhone) {

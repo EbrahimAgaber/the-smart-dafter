@@ -947,9 +947,16 @@ async function generateThermal80mmInvoicePdf(
   const subtotal = items.length > 0 ? items.reduce((sum, it) => sum + (Number(it.subtotal) || 0), 0) : (transaction.subtotalBeforeTax ?? transaction.totalAmount);
   const remaining = Math.max(0, transaction.totalAmount - transaction.paidAmount);
 
+  const isQuotation = transaction.type === 'QUOTATION';
   const summaryLines: Array<{ label: string; value: string; isBold?: boolean; color?: string; isDivider?: boolean }> = [];
   if (totalUnitsSold > 0) {
-    summaryLines.push({ label: isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:', value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`, color: '#047857' });
+    summaryLines.push({
+      label: isQuotation
+        ? (isRtl ? 'إجمالي الكمية المعروضة:' : 'Offered Quantity:')
+        : (isRtl ? 'إجمالي الكمية المباعة:' : 'Quantity Sold:'),
+      value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'units'}`,
+      color: '#047857'
+    });
   }
   summaryLines.push({ label: isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', value: formatCurrency(subtotal, currency, lang) });
   if (transaction.discountAmount && transaction.discountAmount > 0) {
@@ -959,12 +966,27 @@ async function generateThermal80mmInvoicePdf(
     summaryLines.push({ label: `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`, value: `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}` });
   }
   summaryLines.push({ label: '', value: '', isDivider: true });
-  summaryLines.push({ label: isRtl ? 'الإجمالي الصافي النهائي:' : 'Total Amount:', value: formatCurrency(transaction.totalAmount, currency, lang), isBold: true, color: '#0f172a' });
-  if (transaction.paidAmount > 0) {
-    summaryLines.push({ label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:', value: formatCurrency(transaction.paidAmount, currency, lang), color: '#047857' });
-  }
-  if (remaining > 0) {
-    summaryLines.push({ label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining Debt:', value: formatCurrency(remaining, currency, lang), isBold: true, color: '#b91c1c' });
+  summaryLines.push({
+    label: isQuotation
+      ? (isRtl ? 'إجمالي عرض السعر التقديري:' : 'Quotation Total:')
+      : (isRtl ? 'الإجمالي الصافي النهائي:' : 'Total Amount:'),
+    value: formatCurrency(transaction.totalAmount, currency, lang),
+    isBold: true,
+    color: isQuotation ? '#3730a3' : '#0f172a'
+  });
+  if (!isQuotation) {
+    if (transaction.paidAmount > 0) {
+      summaryLines.push({ label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:', value: formatCurrency(transaction.paidAmount, currency, lang), color: '#047857' });
+    }
+    if (remaining > 0) {
+      summaryLines.push({ label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining Debt:', value: formatCurrency(remaining, currency, lang), isBold: true, color: '#b91c1c' });
+    }
+  } else {
+    summaryLines.push({
+      label: isRtl ? 'الأثر المالي للعرض:' : 'Financial Impact:',
+      value: isRtl ? 'عرض غير ملزم (0 ر.س دين)' : 'Zero Debt (Estimate)',
+      color: '#4f46e5'
+    });
   }
 
   // Calculate exact box height
@@ -1057,7 +1079,7 @@ async function generateThermal80mmInvoicePdf(
   }
 
   // Footer Note
-  if (profile.invoiceFooterNote) {
+  if (profile.invoiceFooterNote && !isQuotation) {
     ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#64748b';
     ctx.textAlign = 'center';
@@ -1270,22 +1292,34 @@ async function generateMobilePhoneInvoicePdf(
   ctx.textAlign = 'center';
   ctx.font = 'bold 12px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(isRtl ? 'الرصيد القائم الحالي:' : 'Current Balance:', balBoxX + balBoxW / 2, balBoxY + 22);
 
-  const balColor = party.currentBalance > 0
-    ? (party.type === 'CUSTOMER' ? '#b91c1c' : '#b45309')
-    : '#047857';
+  const isQuotMobile = transaction.type === 'QUOTATION';
+  if (isQuotMobile) {
+    ctx.fillText(isRtl ? 'الأثر المالي للعرض:' : 'Financial Impact:', balBoxX + balBoxW / 2, balBoxY + 22);
+    ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#4f46e5';
+    ctx.fillText(isRtl ? '0.00 ر.س (عرض غير ملزم)' : '0.00 SAR (Estimate)', balBoxX + balBoxW / 2, balBoxY + 46);
+    ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#6366f1';
+    ctx.fillText(isRtl ? 'لا يترتب أي دين' : 'Zero Debt Claim', balBoxX + balBoxW / 2, balBoxY + 64);
+  } else {
+    ctx.fillText(isRtl ? 'الرصيد القائم الحالي:' : 'Current Balance:', balBoxX + balBoxW / 2, balBoxY + 22);
 
-  ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = balColor;
-  ctx.fillText(formatCurrency(party.currentBalance, currency, lang), balBoxX + balBoxW / 2, balBoxY + 46);
+    const balColor = party.currentBalance > 0
+      ? (party.type === 'CUSTOMER' ? '#b91c1c' : '#b45309')
+      : '#047857';
 
-  ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
-  ctx.fillStyle = '#64748b';
-  const balStatus = party.currentBalance === 0
-    ? (isRtl ? 'حساب خالص بالكامل' : 'Account Settled')
-    : (party.type === 'CUSTOMER' ? (isRtl ? '(مستحق بذمة العميل)' : '(Owed by Customer)') : (isRtl ? '(مستحق للمورد)' : '(Owed to Supplier)'));
-  ctx.fillText(balStatus, balBoxX + balBoxW / 2, balBoxY + 64);
+    ctx.font = 'bold 18px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = balColor;
+    ctx.fillText(formatCurrency(party.currentBalance, currency, lang), balBoxX + balBoxW / 2, balBoxY + 46);
+
+    ctx.font = '11px Cairo, Tahoma, "Segoe UI", sans-serif';
+    ctx.fillStyle = '#64748b';
+    const balStatus = party.currentBalance === 0
+      ? (isRtl ? 'حساب خالص بالكامل' : 'Account Settled')
+      : (party.type === 'CUSTOMER' ? (isRtl ? '(مستحق بذمة العميل)' : '(Owed by Customer)') : (isRtl ? '(مستحق للمورد)' : '(Owed to Supplier)'));
+    ctx.fillText(balStatus, balBoxX + balBoxW / 2, balBoxY + 64);
+  }
 
   ctx.restore();
   y += partyCardH + 18;
@@ -1456,28 +1490,38 @@ async function generateMobilePhoneInvoicePdf(
 
   // Row 5: Grand Total
   summaryRows.push({
-    label: isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:',
+    label: isQuotMobile
+      ? (isRtl ? 'إجمالي عرض السعر التقديري:' : 'Quotation Total Estimate:')
+      : (isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:'),
     value: formatCurrency(transaction.totalAmount, currency, lang),
     isTotal: true,
-    color: '#0f172a',
+    color: isQuotMobile ? '#3730a3' : '#0f172a',
   });
 
-  // Row 6: Paid Amount
-  if (transaction.paidAmount > 0) {
-    summaryRows.push({
-      label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:',
-      value: formatCurrency(transaction.paidAmount, currency, lang),
-      color: '#047857',
-    });
-  }
+  if (!isQuotMobile) {
+    // Row 6: Paid Amount
+    if (transaction.paidAmount > 0) {
+      summaryRows.push({
+        label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:',
+        value: formatCurrency(transaction.paidAmount, currency, lang),
+        color: '#047857',
+      });
+    }
 
-  // Row 7: Remaining Debt
-  if (remainingDebt > 0) {
+    // Row 7: Remaining Debt
+    if (remainingDebt > 0) {
+      summaryRows.push({
+        label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:',
+        value: formatCurrency(remainingDebt, currency, lang),
+        isLarge: true,
+        color: '#b91c1c',
+      });
+    }
+  } else {
     summaryRows.push({
-      label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:',
-      value: formatCurrency(remainingDebt, currency, lang),
-      isLarge: true,
-      color: '#b91c1c',
+      label: isRtl ? 'الأثر المالي للعرض:' : 'Financial Impact:',
+      value: isRtl ? 'لا يترتب أي دين (0.00 ر.س ذمة مالية)' : 'Zero Debt (Non-binding quote)',
+      color: '#4f46e5',
     });
   }
 
@@ -1604,13 +1648,13 @@ async function generateMobilePhoneInvoicePdf(
   }
 
   // Footer notes & quotation terms
-  if (profile.invoiceFooterNote || transaction.quotationTerms) {
+  if ((profile.invoiceFooterNote && !isQuotMobile) || transaction.quotationTerms) {
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = 'center';
     ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
     ctx.fillStyle = '#475569';
-    if (profile.invoiceFooterNote) {
+    if (profile.invoiceFooterNote && !isQuotMobile) {
       ctx.fillText(profile.invoiceFooterNote, WIDTH / 2, y);
       y += 24;
     }
@@ -1809,23 +1853,43 @@ export async function generateInvoicePdf(
   ctx.textAlign = isRtl ? 'right' : 'left';
   const mTextX = isRtl ? metaCardX + cardW - 20 : metaCardX + 20;
 
+  const isQuotation = transaction.type === 'QUOTATION';
+
   ctx.font = 'bold 14px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#64748b';
-  ctx.fillText(isRtl ? 'تفاصيل العملية:' : 'TRANSACTION DETAILS:', mTextX, currentY + 28);
+  ctx.fillText(
+    isQuotation
+      ? (isRtl ? 'تفاصيل عرض السعر:' : 'QUOTATION DETAILS:')
+      : (isRtl ? 'تفاصيل العملية:' : 'TRANSACTION DETAILS:'),
+    mTextX,
+    currentY + 28
+  );
 
   ctx.font = 'bold 15px Cairo, Tahoma, "Segoe UI", sans-serif';
   ctx.fillStyle = '#334155';
-  ctx.fillText(
-    `${isRtl ? 'طريقة السداد: ' : 'Payment Method: '} ${transaction.paymentMethod || (isRtl ? 'آجل مسجل بالدفتر' : 'Credit / On-Account')}`,
-    mTextX,
-    currentY + 58
-  );
-
-  ctx.fillText(
-    `${isRtl ? 'الحالة: ' : 'Status: '} ${transaction.isVoided ? (isRtl ? 'ملغاة' : 'VOIDED') : (isRtl ? 'معتمدة ومسجلة' : 'Confirmed')}`,
-    mTextX,
-    currentY + 86
-  );
+  if (isQuotation) {
+    ctx.fillText(
+      `${isRtl ? 'نوع الوثيقة: ' : 'Document Type: '} ${isRtl ? 'عرض أسعار تقديري (غير ملزم)' : 'Price Estimate (Non-binding)'}`,
+      mTextX,
+      currentY + 58
+    );
+    ctx.fillText(
+      `${isRtl ? 'حالة العرض: ' : 'Status: '} ${transaction.isQuotationConverted ? (isRtl ? 'معمّد ومحوّل لفاتورة مبيعات' : 'Approved & Converted to Invoice') : (isRtl ? `سارٍ لمدة ${transaction.quotationValidityDays || 7} أيام من تاريخه` : `Valid for ${transaction.quotationValidityDays || 7} days`)}`,
+      mTextX,
+      currentY + 86
+    );
+  } else {
+    ctx.fillText(
+      `${isRtl ? 'طريقة السداد: ' : 'Payment Method: '} ${transaction.paymentMethod || (isRtl ? 'آجل مسجل بالدفتر' : 'Credit / On-Account')}`,
+      mTextX,
+      currentY + 58
+    );
+    ctx.fillText(
+      `${isRtl ? 'الحالة: ' : 'Status: '} ${transaction.isVoided ? (isRtl ? 'ملغاة' : 'VOIDED') : (isRtl ? 'معتمدة ومسجلة' : 'Confirmed')}`,
+      mTextX,
+      currentY + 86
+    );
+  }
   ctx.restore();
 
   currentY += cardH + 25;
@@ -1966,7 +2030,13 @@ export async function generateInvoicePdf(
 
   const a4SummaryRows: A4SummaryRow[] = [];
   if (totalUnitsSold > 0) {
-    a4SummaryRows.push({ label: isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:', value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`, color: '#047857' });
+    a4SummaryRows.push({
+      label: isQuotation
+        ? (isRtl ? 'إجمالي الكمية المعروضة:' : 'Total Offered Units:')
+        : (isRtl ? 'إجمالي الكمية المباعة:' : 'Total Quantity Sold:'),
+      value: `${totalUnitsSold} ${isRtl ? 'قطعة' : 'Units'}`,
+      color: '#047857'
+    });
   }
   a4SummaryRows.push({ label: isRtl ? 'المجموع الفرعي للأصناف:' : 'Subtotal:', value: formatCurrency(subtotal, currency, lang) });
   if (transaction.discountAmount && transaction.discountAmount > 0) {
@@ -1976,12 +2046,28 @@ export async function generateInvoicePdf(
     a4SummaryRows.push({ label: `${isRtl ? 'ضريبة القيمة المضافة ' : 'VAT '}(${transaction.taxRate || 15}%):`, value: `+ ${formatCurrency(transaction.taxAmount!, currency, lang)}` });
   }
   a4SummaryRows.push({ label: '', value: '', isDivider: true });
-  a4SummaryRows.push({ label: isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:', value: formatCurrency(transaction.totalAmount, currency, lang), isBold: true, color: '#0f172a' });
-  if (transaction.paidAmount > 0) {
-    a4SummaryRows.push({ label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:', value: formatCurrency(transaction.paidAmount, currency, lang), color: '#047857' });
-  }
-  if (remaining > 0) {
-    a4SummaryRows.push({ label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', value: formatCurrency(remaining, currency, lang), isBold: true, color: '#b91c1c' });
+  a4SummaryRows.push({
+    label: isQuotation
+      ? (isRtl ? 'إجمالي عرض السعر التقديري:' : 'Quotation Total Estimate:')
+      : (isRtl ? 'الإجمالي الصافي النهائي:' : 'Final Grand Total:'),
+    value: formatCurrency(transaction.totalAmount, currency, lang),
+    isBold: true,
+    color: isQuotation ? '#3730a3' : '#0f172a'
+  });
+
+  if (!isQuotation) {
+    if (transaction.paidAmount > 0) {
+      a4SummaryRows.push({ label: isRtl ? 'المدفوع نقداً:' : 'Paid Now:', value: formatCurrency(transaction.paidAmount, currency, lang), color: '#047857' });
+    }
+    if (remaining > 0) {
+      a4SummaryRows.push({ label: isRtl ? 'المتبقي مقيد بالآجل:' : 'Remaining On-Account:', value: formatCurrency(remaining, currency, lang), isBold: true, color: '#b91c1c' });
+    }
+  } else {
+    a4SummaryRows.push({
+      label: isRtl ? 'الأثر المالي للعرض:' : 'Financial Impact:',
+      value: isRtl ? 'لا يترتب أي دين (0.00 ر.س ذمة مالية)' : 'Zero Debt (Non-binding quote)',
+      color: '#4f46e5'
+    });
   }
 
   let summaryBoxH = 36;
@@ -2112,7 +2198,7 @@ export async function generateInvoicePdf(
   // Bank Info & Footer Notes
   currentY = sumY + summaryBoxH + 25;
 
-  if (profile.iban || profile.invoiceFooterNote) {
+  if (profile.iban || (profile.invoiceFooterNote && !isQuotation) || isQuotation) {
     ctx.save();
     ctx.direction = isRtl ? 'rtl' : 'ltr';
     ctx.textAlign = isRtl ? 'right' : 'left';
@@ -2129,14 +2215,14 @@ export async function generateInvoicePdf(
       currentY += 22;
     }
 
-    if (profile.invoiceFooterNote) {
+    if (profile.invoiceFooterNote && !isQuotation) {
       ctx.font = '13px Cairo, Tahoma, "Segoe UI", sans-serif';
       ctx.fillStyle = '#64748b';
       ctx.fillText(profile.invoiceFooterNote, noteX, currentY);
       currentY += 20;
     }
 
-    if (transaction.type === 'QUOTATION') {
+    if (isQuotation) {
       const qValidity = transaction.quotationValidityDays || 15;
       const qTermsText = transaction.quotationTerms
         ? (isRtl ? `شروط العرض: ${transaction.quotationTerms} | مدة السريان: ${qValidity} يوماً` : `Terms: ${transaction.quotationTerms} | Validity: ${qValidity} days`)

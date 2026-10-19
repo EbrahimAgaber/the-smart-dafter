@@ -747,19 +747,33 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                 )}
               </div>
 
-              <div className="text-end">
-                <span className="text-xs uppercase font-bold text-stone-500 block">
-                  {t.currentBalance}
-                </span>
-                <div className="text-base sm:text-lg font-black font-mono text-stone-900 mt-0.5">
-                  {formatCurrency(party.currentBalance, currency, lang)}
+              {isQuotation ? (
+                <div className="text-end">
+                  <span className="text-xs uppercase font-bold text-indigo-600 block">
+                    {isRtl ? 'الأثر المالي للعرض' : 'Financial Impact'}
+                  </span>
+                  <div className="text-sm sm:text-base font-black text-indigo-900 mt-0.5">
+                    {isRtl ? 'لا يترتب أي دين (0.00 ر.س)' : 'Zero Debt (0.00 SAR)'}
+                  </div>
+                  <span className="text-[11px] text-indigo-600">
+                    {isRtl ? 'عرض سعر تقديري غير ملزم' : 'Non-binding price quote'}
+                  </span>
                 </div>
-                <span className="text-xs text-stone-500">
-                  {party.type === 'CUSTOMER'
-                    ? (isRtl ? 'ذمم مدينة مطلوبة' : 'Account Receivable')
-                    : (isRtl ? 'ذمم دائنة مستحقة' : 'Account Payable')}
-                </span>
-              </div>
+              ) : (
+                <div className="text-end">
+                  <span className="text-xs uppercase font-bold text-stone-500 block">
+                    {t.currentBalance}
+                  </span>
+                  <div className="text-base sm:text-lg font-black font-mono text-stone-900 mt-0.5">
+                    {formatCurrency(party.currentBalance, currency, lang)}
+                  </div>
+                  <span className="text-xs text-stone-500">
+                    {party.type === 'CUSTOMER'
+                      ? (isRtl ? 'ذمم مدينة مطلوبة' : 'Account Receivable')
+                      : (isRtl ? 'ذمم دائنة مستحقة' : 'Account Payable')}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Line Items Table (if any) */}
@@ -995,9 +1009,11 @@ export const InvoicePdfModal: React.FC<InvoicePdfModalProps> = ({
                 </div>
               )}
 
-              <p className="text-center font-medium text-stone-700 pt-1">
-                {profile.invoiceFooterNote || t.thankYouNote}
-              </p>
+              {!isQuotation && (
+                <p className="text-center font-medium text-stone-700 pt-1">
+                  {profile.invoiceFooterNote || t.thankYouNote}
+                </p>
+              )}
             </div>
           </div>
         </div>
